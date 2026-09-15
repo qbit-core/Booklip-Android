@@ -14,7 +14,12 @@ class MainActivity : ComponentActivity() {
         val app = application as BooklipApplication
         setContent {
             BooklipTheme {
-                BooklipNavHost(repository = app.repository, settingsRepository = app.settingsRepository)
+                BooklipNavHost(
+                    repository = app.repository,
+                    settingsRepository = app.settingsRepository,
+                    statsRepository = app.statsRepository,
+                    cloudRepository = app.cloudRepository,
+                )
             }
         }
     }

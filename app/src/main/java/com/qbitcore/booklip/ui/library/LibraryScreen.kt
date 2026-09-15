@@ -21,6 +21,8 @@ import androidx.compose.foundation.lazy.grid.items
 import androidx.compose.foundation.lazy.items
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Add
+import androidx.compose.material.icons.filled.BarChart
+import androidx.compose.material.icons.filled.Cloud
 import androidx.compose.material.icons.filled.GridView
 import androidx.compose.material.icons.filled.MoreVert
 import androidx.compose.material.icons.filled.Sort
@@ -65,6 +67,8 @@ fun LibraryScreen(
     viewModel: LibraryViewModel,
     repository: BookRepository,
     onOpenBook: (Book) -> Unit,
+    onOpenStats: () -> Unit,
+    onOpenCloud: () -> Unit,
 ) {
     val uiState by viewModel.uiState.collectAsState()
     val context = LocalContext.current
@@ -99,6 +103,12 @@ fun LibraryScreen(
             TopAppBar(
                 title = { Text("Booklip") },
                 actions = {
+                    IconButton(onClick = onOpenCloud) {
+                        Icon(Icons.Filled.Cloud, contentDescription = "Cloud import")
+                    }
+                    IconButton(onClick = onOpenStats) {
+                        Icon(Icons.Filled.BarChart, contentDescription = "Reading stats")
+                    }
                     IconButton(onClick = { showViewModeMenu = true }) {
                         Icon(Icons.Filled.GridView, contentDescription = "View mode")
                     }
@@ -131,6 +141,7 @@ fun LibraryScreen(
                         "text/plain",
                         "text/markdown",
                         "application/epub+zip",
+                        "application/pdf",
                         "application/octet-stream",
                     )
                 )
@@ -150,7 +161,7 @@ fun LibraryScreen(
             Box(modifier = Modifier.fillMaxSize()) {
                 if (visibleBooks.isEmpty()) {
                     Text(
-                        text = "No books yet. Tap + to import a .txt, .md, or .epub file.",
+                        text = "No books yet. Tap + to import a .txt, .md, .epub, or .pdf file.",
                         modifier = Modifier
                             .padding(24.dp)
                             .fillMaxWidth(),

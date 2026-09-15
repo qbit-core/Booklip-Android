@@ -28,12 +28,25 @@ class FileStore(context: Context) {
     private fun chaptersFile(fileName: String): File = File(chaptersDir, "$fileName.json")
 
     fun importFrom(resolver: ContentResolver, uri: Uri, suggestedName: String): File {
-        val ext = suggestedName.substringAfterLast('.', "")
-        val fileName = if (ext.isEmpty()) UUID.randomUUID().toString() else "${UUID.randomUUID()}.$ext"
-        val dest = File(booksDir, fileName)
+        val dest = File(booksDir, freshFileName(suggestedName))
         val input = resolver.openInputStream(uri) ?: throw IOException("Cannot open $uri")
         input.use { stream -> dest.outputStream().use { output -> stream.copyTo(output) } }
         return dest
+    }
+
+    /** Moves an already-local file (e.g. a cloud download) into [booksDir] under a fresh name. */
+    fun adopt(source: File, suggestedName: String): File {
+        val dest = File(booksDir, freshFileName(suggestedName))
+        if (!source.renameTo(dest)) {
+            source.copyTo(dest, overwrite = true)
+            source.delete()
+        }
+        return dest
+    }
+
+    private fun freshFileName(suggestedName: String): String {
+        val ext = suggestedName.substringAfterLast('.', "")
+        return if (ext.isEmpty()) UUID.randomUUID().toString() else "${UUID.randomUUID()}.$ext"
     }
 
     fun saveCover(bytes: ByteArray, forFileName: String): String {

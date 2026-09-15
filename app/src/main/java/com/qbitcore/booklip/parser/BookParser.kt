@@ -12,8 +12,6 @@ object ParserFactory {
         BookFormat.TXT -> PlainTextParser.parse(file)
         BookFormat.MARKDOWN -> MarkdownParser.parse(file)
         BookFormat.EPUB -> EpubParser.parse(file)
-        BookFormat.PDF -> throw UnsupportedOperationException(
-            "PDF import isn't supported yet — planned for a later milestone."
-        )
+        BookFormat.PDF -> PdfParser.parse(file)
     }
 }
