@@ -19,10 +19,9 @@ import org.json.JSONObject
  * authorization step (a real browser, not an embedded WebView — required by
  * every provider here) and [OAuthRedirectActivity] to catch the redirect.
  *
- * Unlike the iOS OAuthSession (ASWebAuthenticationSession reports an explicit
- * cancellation), there is no direct signal when a user closes the Custom Tab
- * without completing sign-in — [authorize] just waits up to [AUTH_TIMEOUT_MS]
- * for a redirect and reports a timeout/cancellation after that.
+ * A Custom Tab gives no signal when the user closes it without signing in;
+ * [OAuthRedirectBridge.onHostResumed] detects that case, and [AUTH_TIMEOUT_MS]
+ * is only the backstop.
  */
 object OAuthClient {
     private const val AUTH_TIMEOUT_MS = 5 * 60_000L
@@ -45,14 +44,25 @@ object OAuthClient {
 
         val deferred = OAuthRedirectBridge.begin()
         val customTabsIntent = CustomTabsIntent.Builder().build()
-        customTabsIntent.intent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
-        customTabsIntent.launchUrl(context, authUri)
+        // From an Activity the tab opens on top of the app's own task; only a
+        // non-activity context needs its own task.
+        if (context !is android.app.Activity) customTabsIntent.intent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+        try {
+            customTabsIntent.launchUrl(context, authUri)
+        } catch (e: android.content.ActivityNotFoundException) {
+            OAuthRedirectBridge.cancel()
+            throw OAuthException("No web browser is available to sign in with.")
+        }
 
         val redirect = try {
             withTimeout(AUTH_TIMEOUT_MS) { deferred.await() }
         } catch (e: TimeoutCancellationException) {
             OAuthRedirectBridge.cancel()
-            throw OAuthException("Authentication was cancelled or timed out.")
+            throw OAuthException("Sign-in timed out.")
+        }
+        redirect.getQueryParameter("error")?.let { error ->
+            if (error == "access_denied") throw OAuthCancelledException()
+            throw OAuthException(redirect.getQueryParameter("error_description") ?: error)
         }
 
         if (redirect.getQueryParameter("state") != state) {

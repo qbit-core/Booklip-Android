@@ -6,190 +6,196 @@ Guidance for Claude Code when working in this repo.
 
 Android port of **Booklip**, an offline-first ebook/text reader. The source of
 truth for behavior and feature scope is the iOS app at
-`~/Workspace/iOS/ReaderApp` (see its `CLAUDE.md`) — this port re-implements
-the same idea with Android-idiomatic tools, not a line-for-line translation.
+`~/Workspace/iOS/ReaderApp` (see its `CLAUDE.md`). This port re-implements the
+same features with Android-idiomatic tools; it is not a line-for-line
+translation, but **positions, highlights and chapter offsets use the same
+index space as iOS** (UTF-16 offsets into the rendered text).
 
 - Package / applicationId: `com.qbitcore.booklip`
-- Kotlin + Jetpack Compose (Material 3), min SDK 26, compile/target SDK 34
+- Kotlin + Jetpack Compose (Material 3), min SDK 26, target SDK 34,
+  **compile SDK 37** (needed for the PDF text APIs — see "PDF")
 - Persistence: Room (books, folders, bookmarks, highlights) + DataStore
-  Preferences (reading settings, reading stats, cloud tokens)
-- No backend of its own, no analytics. Cloud import is opt-in, read-only
-  OAuth to the user's own Dropbox/Google Drive/OneDrive — matches the iOS
-  app's privacy stance (see its CLAUDE.md "Privacy" section).
-
-## Scope vs. the iOS app
-
-All originally-deferred features are now implemented: PDF import/reading,
-text-to-speech, cloud import (Dropbox / Google Drive / OneDrive), bookmarks,
-highlights, and reading stats. Two areas are deliberate, permanent
-simplifications rather than gaps to fill in later:
-
-- **EPUB embedded-font extraction/de-obfuscation and inline images** are not
-  ported. Android renders with system fonts; this matters far less than on
-  iOS, where a book's own font is sometimes required for correct Korean glyph
-  coverage.
-- **PDF text extraction** doesn't exist at all — Android's built-in
-  `PdfRenderer` is raster-only (no text-layer API without a third-party PDF
-  library), unlike iOS's PDFKit. The PDF reader shows real page images
-  instead (see `PdfReaderScreen`), same as what the iOS PDFReaderView
-  actually displays — its own extracted text there only feeds TTS/search,
-  which Android's PDF path doesn't have either.
-
-## Architecture (`app/src/main/java/com/qbitcore/booklip/`)
-
-- **model/** — `Book`, `BookFolder`, `Bookmark`, `Highlight` (all Room
-  entities) + `Chapter` (in-memory TOC entry, not persisted). `HighlightColor`
-  is a 4-color enum, same set as iOS.
-- **parser/** — `BookParser` interface + `ParserFactory` (static dispatch,
-  mirrors iOS `ParserFactory`), `PlainTextParser` (encoding fallback chain:
-  UTF-8 → EUC-KR → MS949(CP949) → UTF-16 → windows-1252 → ISO-8859-1, each
-  tried with a **strict** decoder — see its doc comment for why), `MarkdownParser`,
-  `EpubParser` (unzip via `java.util.zip.ZipFile`, OPF/NCX parsing via
-  `android.util.Xml`'s pull parser, regex-based HTML stripping — a simplified
-  port, see "Scope vs. the iOS app"), `PdfParser` (page count + a page-0
-  thumbnail for the library cover only — no text).
-- **data/** — `BookDao` / `FolderDao` / `BookmarkDao` / `HighlightDao` (Room),
-  `Converters` (Room `TypeConverter`s for the `BookFormat` and
-  `HighlightColor` enums — Room has no native enum support, don't remove
-  these without swapping in another conversion), `BooklipDatabase` (version 2;
-  `fallbackToDestructiveMigration()` is on in `BooklipApplication` since this
-  is pre-release — write a real migration before shipping to real users),
-  `FileStore` (owns everything on disk: imported book files, an extracted
-  **plain-text cache** + **chapters cache** written once at import time so
-  the reader never has to re-run `EpubParser` just to open a book, and cover
-  images), `BookRepository` (the single entry point UI code talks to; wraps
-  Room + FileStore + ParserFactory), `ReadingStatsRepository` (DataStore:
-  total seconds read + a set of "read today" day keys, mirrors iOS
-  `ReadingStats`).
-- **data/cloud/** — `CloudConfig` (client IDs/redirect URIs — placeholders,
-  see "Cloud OAuth" below), `CloudProvider` (enum of the 3 providers + their
-  endpoints/scopes), `PkceUtil`, `OAuthToken`, `OAuthClient` (PKCE authorize
-  via Chrome Custom Tabs + token exchange/refresh via plain
-  `HttpURLConnection` — no networking library dependency), `OAuthRedirectActivity`
-  + `OAuthRedirectBridge` (catch the `booklip://auth/*` redirect and hand it
-  back to the suspended `authorize()` call), `CloudFile` + `CloudService`
-  interface, `DropboxService` / `GoogleDriveService` / `OneDriveService`
-  (each a direct, from-scratch REST client against that provider's real API —
-  no shared abstraction beyond the `CloudService` interface, since the three
-  APIs' request shapes genuinely differ), `CloudTokenStore` (DataStore),
-  `CloudRepository` (orchestrates auth + listing + download-then-import).
-- **settings/** — `ReadingSettings` (font family from a small fixed list of
-  Android system font families — Serif/Sans/Monospace, not the iOS app's
-  named-font list, since Android doesn't ship those fonts — font size, line
-  spacing, color preset) + `SettingsRepository` (DataStore-backed).
-- **tts/** — `BooklipTts` wraps `android.speech.tts.TextToSpeech`. See "TTS"
-  below for how it differs from the iOS `TTSManager`.
-- **ui/library/** — `LibraryViewModel`, `LibraryScreen`, `BookCard`,
-  `StatsScreen` (mirrors iOS `StatsView`).
-- **ui/reader/** — `ReaderViewModel` (text books: cached plain text +
-  chapters + bookmarks/highlights + TTS, all per book id), `ReaderScreen` (a
-  `LazyColumn` of paragraphs — **not** the iOS app's char-based TextKit
-  pager; progress is a paragraph index, not a character offset),
-  `AppearanceSheet`, `NavigateDialog` (tabbed Contents/Bookmarks/Highlights,
-  mirrors iOS `ContentsPanel`), `TtsSheet` (mirrors iOS `TTSPanel`),
-  `PdfReaderViewModel` + `PdfReaderScreen` (separate ViewModel/screen for PDF
-  — see "Scope vs. the iOS app").
-- **ui/cloud/** — `CloudViewModel`, `CloudConnectScreen` (provider picker,
-  mirrors iOS `CloudConnectView`), `CloudFileBrowserScreen` (breadcrumb +
-  folder navigation + tap-to-import, mirrors iOS `CloudFileBrowserView`).
-- **navigation/** — `BooklipNavHost`: `library`, `stats`, `cloud`,
-  `cloud/browse`, `reader/{bookId}`, `pdfreader/{bookId}`. `LibraryScreen`
-  picks `reader` vs. `pdfreader` from `book.format` at the call site (it
-  already has the `Book` object when the user taps it).
-
-## Key decisions & gotchas
-
-- **`Book.charIndex` means different things per format.** For text formats
-  it's a paragraph index into `ReaderScreen`'s `LazyColumn` (the iOS field of
-  the same name is a UTF-16 TextKit character index — no equivalent here).
-  For PDF it's a page index. Don't try to make stored progress values
-  interoperate across formats, or with the iOS app, without a conversion layer.
-- **A book's `LazyListState` is created with `remember(uiState.book?.id) {
-  LazyListState(...) }`, not `rememberLazyListState(initialFirstVisibleItemIndex
-  = ...)`** (both `ReaderScreen` and `PdfReaderScreen`). The book loads
-  asynchronously (`uiState.book` is null on first composition), so a plain
-  `rememberLazyListState` would freeze its initial scroll index at 0 forever —
-  `remember` only re-runs its initializer when the key changes, and keying on
-  the book id makes it re-run exactly once, right when the loaded book (and
-  its saved position) becomes available. The same pattern bit
-  `derivedStateOf { listState.firstVisibleItemIndex }` in `ReaderScreen` —
-  that one needs `remember(listState)`, not a bare unkeyed `remember`, or it
-  permanently captures the first (pre-load placeholder) `LazyListState`.
-- **The `List` icon (`androidx.compose.material.icons.filled.List`) must be
-  imported with an alias** (`import ... as ListIcon` in `ReaderScreen.kt`).
-  Importing it under its own name shadows `kotlin.collections.List` for every
-  bare `List<T>` type reference in that file — a real compile error, not a
-  style nit.
-- **`FileStore` caches parsed plain text + chapters at import time**
-  (`<fileName>.txt` / `<fileName>.json` next to the original file). The
-  reader always reads from that cache, never re-parsing the original EPUB —
-  if you change `EpubParser`'s output shape, existing imported books' caches
-  go stale until re-imported (there's no cache-invalidation/versioning yet).
-- **A Room entity field of enum type needs a `Converters` entry, or the build
-  fails at annotation-processing time**, not silently. Both `BookFormat`
-  (`Book`) and `HighlightColor` (`Highlight`) have one — keep that pairing in
-  mind before adding another enum-typed entity field.
-- **A highlight is per-paragraph, not per-substring.** The iOS Highlight model
-  stores an arbitrary NSRange because it renders one continuous
-  NSTextStorage; this reader is a list of discrete paragraph `Text`
-  composables, so `Highlight.paragraphIndex` covers the whole paragraph.
-  Picking a new color for an already-highlighted paragraph replaces the
-  existing `Highlight` row (see `ReaderViewModel.setHighlight`) rather than
-  stacking a second one — don't reintroduce a bare `addHighlight` call there
-  without that replace-first step.
-- **TTS has no true pause/resume.** `android.speech.tts.TextToSpeech` has no
-  public "pause in place" API (unlike iOS's `AVSpeechSynthesizer.pauseSpeaking`),
-  so `BooklipTts.pause()` stops the engine and remembers the current
-  paragraph, and `resume()` re-speaks that paragraph from its start. Word/
-  chunk-level position within a paragraph is lost on pause.
-- **`ReaderViewModel.onCleared()` cannot use `viewModelScope`** to save the
-  reading-stats session length — `viewModelScope` is already cancelled by the
-  time `onCleared()` runs, so a coroutine launched on it there silently never
-  executes. It uses a short-lived scope of its own instead.
-- **`OAuthClient.authorize()` has no true cancel signal.** Chrome Custom Tabs
-  gives no callback when a user just closes the tab without finishing sign-in
-  (unlike iOS's `ASWebAuthenticationSession`, which reports cancellation
-  directly) — it times out after 5 minutes instead. A user who backs out
-  waits for that timeout before seeing an error, unless a future pass adds
-  lifecycle-based cancellation detection.
-- **No Gradle build has been run in this environment** (no Android SDK, and
-  system Java is 11 — AGP 8.5.x requires JDK 17 to run, independent of the
-  app's own `compileSdk`/`targetSdk`). Open the project in Android Studio,
-  which bundles a compatible JDK and can fetch missing SDK platforms — that's
-  the first real compiler feedback this code will get. Every file here has
-  had a manual review pass looking for exactly the kind of mistake a compiler
-  would catch (see the git history for several real ones that were found and
-  fixed this way — a Room enum converter, an icon-name/`List<T>` collision, a
-  stale `remember` capture, a `download(): Unit` override whose expression
-  body actually inferred `Long`), but that is not a substitute for actually
-  building it.
-
-## Cloud OAuth
-
-`CloudConfig.kt` ships with placeholder client IDs (`YOUR_...`), exactly like
-the iOS app's `CloudConfig.swift` did before it was configured — `OAuthClient`
-refuses to start a flow while a client ID still has that placeholder prefix,
-failing with a clear message instead of a confusing provider-side error.
-Registration notes (also in `CloudConfig.kt`'s header comment):
-
-- **Dropbox** is the easy one: a custom URL scheme redirect isn't
-  OS-specific, so the exact same Dropbox app the iOS build uses can serve
-  Android too — just confirm `booklip://auth/dropbox` is one of its
-  registered redirect URIs.
-- **Google Drive** needs a *new* OAuth client — the iOS app's client is an
-  "iOS" type tied to its bundle id/redirect format and won't validate a
-  different platform's redirect. Register an Android or Desktop-app client
-  and put its ID + a matching redirect in `CloudConfig.kt`.
-- **OneDrive** can likely reuse the iOS app's Application (client) ID — Azure
-  app registrations support multiple redirect URIs per client — after adding
-  an Android/native redirect URI to that same registration in the Azure portal.
+  Preferences (reading settings, library sort/view mode, TTS prefs, reading
+  stats, cloud tokens)
+- No backend, no analytics. Cloud import is opt-in, read-only OAuth.
 
 ## Build / run
-
-Requires Android Studio (or a standalone JDK 17 + Android SDK with
-`compileSdk 34` installed). From the command line once those are set up:
 
 ```bash
 cd ~/Workspace/Android/Booklip
 ./gradlew assembleDebug
+~/Library/Android/sdk/platform-tools/adb install -r app/build/outputs/apk/debug/app-debug.apk
 ```
+
+AGP 9.4 / Kotlin 2.2 / Gradle 9.6, JDK 21 (JetBrains runtime via the
+foojay toolchain resolver). Always build after changes; verify UI changes on
+the emulator rather than by reading the code.
+
+## Features (all implemented, matching the iOS app)
+
+Formats **.txt .epub .pdf .md**. Library: All Books / Folders tabs, folder
+detail screens (plus "Unfiled"), search (also on the Folders tab and inside
+folders), sort + grid/list view modes (persisted), multi-select with
+All/None · Move · Delete, long-press menu (move / delete), real covers.
+Reader: font / size / line spacing / 6 colour themes, **Vertical Slide**
+(continuous scroll) or **Paper Book** (pages) with edge-tap and swipe paging,
+auto-scroll, nested table of contents (NCX / nav, anchor-accurate), bookmarks
+(toggle, ticks on the progress bar), highlights (4 colours, character
+ranges), in-book search with match stepping, Define, exact position restore,
+"Page X / Y". **TTS**: Korean / English voices (or automatic by language),
+speed, pitch, sentence highlight + follow, sleep timer, background playback
+with media notification / lock-screen controls. **Reading stats**. **Cloud
+import**: Dropbox, OneDrive, Google Drive with Select mode (files and whole
+folders → library folder).
+
+Not ported, on purpose: drag-to-sweep selection, iCloud sync (off on iOS
+too), URL import (not reachable in the iOS UI either).
+
+## Architecture (`app/src/main/java/com/qbitcore/booklip/`)
+
+- **`BooklipApplication`** — the service locator: `repository`,
+  `settingsRepository`, `statsRepository`, `cloudRepository`, `tts`, and
+  `appScope` (work that must outlive a screen: saving on close, imports,
+  deletes).
+- **model/** — Room entities `Book`, `BookFolder`, `Bookmark`, `Highlight`
+  (`location` + `length`), plus `Chapter` (TOC entry, not persisted).
+- **parser/** — `PlainTextParser` (strict-decoder fallback chain UTF-8 →
+  EUC-KR → MS949 → UTF-16 → windows-1252 → ISO-8859-1; BOM + CR
+  normalised), `MarkdownParser` + `MarkdownRenderer` (raw text is cached;
+  rendering to text + `StyleRun`s happens on load), `EpubParser` (port of the
+  iOS parser: OPF via pull parser, NCX/nav TOC with fragment splitting,
+  inline images, embedded fonts incl. IDPF/Adobe de-obfuscation, cover),
+  `PdfParser` (page-0 cover only).
+- **data/** — DAOs, `BooklipDatabase` (**version 3**, `MIGRATION_2_3`),
+  `FileStore` (book files, covers, and the per-book parsed cache
+  `files/parsed-v3/<fileName>/`: `text.txt`, `chapters.json`, `img_N`,
+  `font_N`, `meta.json` written last as the "complete" marker),
+  `BookRepository` (the single entry point for UI code),
+  `ReadingStatsRepository`.
+- **data/cloud/** — `CloudConfig`, `CloudProvider`, `OAuthClient` (PKCE via
+  Custom Tabs), `OAuthRedirectActivity` + `OAuthRedirectBridge`,
+  `DropboxService` / `GoogleDriveService` / `OneDriveService` (plain
+  `HttpURLConnection`, paginated listings), `CloudTokenStore`,
+  `CloudRepository`.
+- **settings/** — `ReadingSettings` (font, size, line spacing, theme,
+  `pageEffect`, `useEmbeddedFont`, `autoScrollSpeed`), `SettingsRepository`.
+- **tts/** — `TtsController` (app-wide player over
+  `android.speech.tts.TextToSpeech`), `TtsPlaybackService` (foreground
+  service + `MediaSessionCompat`).
+- **ui/library/** — `LibraryViewModel`, `LibraryScreen`, `FolderViews`
+  (`FolderDetailScreen`, folder cards), `LibraryComponents` (collection,
+  selection bar, dialogs, view/sort menu), `BookCard`, `StatsScreen`.
+- **ui/reader/** — see "The text reader". `PdfReaderViewModel` /
+  `PdfReaderScreen` for PDFs; `ReaderChrome` (bars, progress bar, search
+  bar, gestures), `ContentsPanel`, `AppearanceSheet`, `TtsSheet` are shared
+  by both readers.
+- **ui/cloud/** — `CloudViewModel`, `CloudConnectScreen`,
+  `CloudFileBrowserScreen`.
+- **navigation/** — `BooklipNavHost`: `library`, `unfiled`,
+  `folder/{id}`, `stats`, `cloud`, `cloud/browse`, `reader/{bookId}`,
+  `pdfreader/{bookId}`. Reader view models are scoped to their back-stack
+  entry, so closing a book clears them (and stops speech).
+
+## The text reader
+
+Everything is a **UTF-16 offset into `ReaderDocument.text`**: the reading
+position (`Book.charIndex`), chapters and bookmarks (stored as a 0…1
+fraction, converted with `offsetOf` / `progressOf` — `offsetOf` **rounds**,
+so the round trip is exact), highlights, search matches, the spoken sentence.
+An EPUB image is one `U+FFFC` + `"\n\n"` in the text, as on iOS.
+
+- **`ReaderLayout`** decides lines and pages. `LayoutSpec` holds every
+  metric-affecting value; pages are measured with a `StaticLayout` built from
+  it and displayed in a `TextView` configured by `LayoutSpec.applyTo` with the
+  *same* values (no font padding, `BREAK_STRATEGY_SIMPLE`, no hyphenation,
+  fallback line spacing). **Change one side and you must change the other**,
+  or pages show cut lines. `pageEnd` ends a page at the last line that fits
+  completely; `pageStartBefore` builds the previous page when the position is
+  off the page grid; `paginate` computes every page start in the background
+  (cached per book + spec in `ReaderViewModel.pageCache`).
+- **`PaperReader`** (Paper Book) — one `TextView` per page inside
+  `AnimatedContent`. Holds a `PageRange`; turning never depends on the full
+  page table, which is only used for "Page X / Y" and for exact backward
+  turns when the current page is on the grid.
+- **`ScrollReader`** (Vertical Slide) — a `LazyColumn` with one `TextView`
+  per block (`ReaderDocument.segmentStarts`: ~1200 chars, cut only at line
+  breaks so wrapping is unaffected). The position is the first fully visible
+  line below the top inset. `settled` gates position reporting: the list's
+  provisional position during a seek or a re-layout must not be written back.
+- **`ReaderTextViews`** — `TextView.bind` (rebinding the same block is a
+  no-op so selection survives), background decorations (`Decorations`:
+  highlights, search matches, spoken sentence — none move a line), and the
+  selection action mode (Highlight → colour dialog, Remove Highlight, Define).
+- **Gestures** (`Modifier.readerGestures`): taps and swipes are read at the
+  Compose level. A `TextView` is selectable **only in highlight mode**; then
+  it consumes touches, so taps don't turn pages (swipes still do) and the bars
+  stay up. Scrolling over a selectable `TextView` still works because Compose
+  delivers moves to the `LazyColumn` before the interop view.
+- A seek is a `SeekRequest(offset, token, exact)`: `exact` puts that offset
+  at the top (restore, chapters, bookmarks); otherwise the page / line that
+  contains it (search, progress bar, highlights).
+
+## Key decisions & gotchas
+
+- **Fonts.** Android has font families, not the iOS named faces:
+  `ReaderFont` lists the system families (Korean falls back to Noto Serif /
+  Sans CJK). EPUB embedded fonts are loaded with `Typeface.createFromFile`
+  (TTF/OTF only — no WOFF) and the first one that covers the text is used
+  when "Use book's original font" is on.
+- **Import titles.** Parsers without metadata return the *storage* file name
+  (a UUID). `BookRepository.finishImport` replaces a blank or UUID title
+  with the name the user's file had — don't remove that check.
+- **Room.** Enum columns need `Converters`. Progress, folder and cover
+  updates are column-level `@Query` updates, never a whole-row `@Update`
+  from a possibly stale `Book`. Schema changes need a real `Migration`
+  (destructive fallback only covers pre-v2 development builds).
+- **Cache versioning.** A parser output change means bumping the
+  `parsed-vN` directory name in `FileStore`; books re-parse lazily on open.
+- **TTS.** `TextToSpeech` has no pause: `pause()` stops and `resume()`
+  restarts at the sentence that was being spoken. Chunks are whole sentences
+  packed to 240 chars, 3 queued ahead; utterance ids carry a `generation` so
+  callbacks from a flushed queue are ignored. The manifest `<queries>` entry
+  for `TTS_SERVICE` is required on Android 11+ or no engine can be bound.
+  Speech stops when the reader closes, never just because the app went to the
+  background.
+- **PDF.** Pages are rendered with `PdfRenderer` (one open page at a time,
+  all access under `rendererMutex`; bitmaps are dropped, never recycled,
+  because a frame may still be drawing them). The text layer
+  (`Page.getTextContents` / `searchText`) exists only on **Android 15+**, so
+  PDF speech and search are offered only there.
+- **`Book.charIndex`** is a character offset for text formats, a page index
+  for PDF, and `Book.UNKNOWN_POSITION` (-1) when unknown → fall back to
+  `progress`.
+- **Compose / lifecycle versions.** Compose BOM 2024.06 (UI 1.6) with
+  lifecycle 2.8: use `androidx.compose.ui.platform.LocalLifecycleOwner`
+  (see `ReadingSession`), not `androidx.lifecycle.compose.*` effects — those
+  crash with "LocalLifecycleOwner not present" on this combination.
+- **Name clashes seen here.** A `var x` with `private set` plus a
+  `fun setX()` is a JVM signature clash; inside `MediaSessionCompat.apply {}`
+  `controller` means the session's own controller; importing the `List` icon
+  unaliased shadows `kotlin.collections.List`.
+
+## Cloud OAuth
+
+`CloudConfig.kt` uses the client IDs the iOS app is registered with. Dropbox
+(`booklip://auth/dropbox`) and OneDrive (`booklip://auth/onedrive`) redirects
+are the same as on iOS. Google uses the iOS-type client with its
+reversed-client-id redirect, which works but should be replaced by a proper
+"Android" OAuth client before a Play Store release (instructions in the file
+header). Redirect schemes are declared twice: `CloudConfig.kt` and the
+intent-filters of `OAuthRedirectActivity` in the manifest.
+
+`OAuthRedirectActivity` hands the redirect to `OAuthRedirectBridge` and
+brings `MainActivity` back with `CLEAR_TOP` to close the sign-in tab. Closing
+the tab without signing in is detected by `MainActivity.onResume` →
+`OAuthRedirectBridge.onHostResumed` (a flow still pending when the app is
+back in front = cancelled), reported as `OAuthCancelledException`, which the
+UI does not show as an error. A token that cannot be refreshed signs the
+provider out.
+
+## App icon
+
+`res/mipmap-xxxhdpi/ic_launcher_foreground.png` and
+`ic_launcher_monochrome.png` are generated from the iOS artwork
+(`Assets.xcassets/iOS.appiconset/app_icon_light.png`), scaled to 70 % so the
+book sits inside the adaptive-icon safe zone.

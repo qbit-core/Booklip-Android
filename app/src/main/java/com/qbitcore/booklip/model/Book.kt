@@ -16,6 +16,8 @@ enum class BookFormat {
         }
 
     companion object {
+        val supportedExtensions = setOf("txt", "epub", "pdf", "md", "markdown")
+
         fun fromFileName(name: String): BookFormat? =
             when (name.substringAfterLast('.', "").lowercase()) {
                 "txt" -> TXT
@@ -35,17 +37,19 @@ enum class SortOption(val label: String) {
     FORMAT("Format"),
 }
 
-enum class ViewMode(val label: String, val columns: Int) {
-    LIST("List", 1),
-    SMALL_GRID("Small", 4),
-    MEDIUM_GRID("Medium", 3),
-    LARGE_GRID("Large", 2),
+/** [minCellWidthDp] null = single-column list; otherwise the adaptive grid's minimum cell width (same as iOS). */
+enum class ViewMode(val label: String, val minCellWidthDp: Int?) {
+    LIST("List", null),
+    SMALL_GRID("Small", 100),
+    MEDIUM_GRID("Medium", 150),
+    LARGE_GRID("Large", 210),
 }
 
 /**
- * [charIndex] is the reader's last scroll position expressed as a paragraph
- * index (see ReaderScreen) — not a character offset. It only needs to be
- * meaningful to this app's own reader, unlike the iOS version's UTF-16 index.
+ * [charIndex] is the last reading position: for text formats a UTF-16 offset
+ * into the book's rendered text (same index space as the iOS app), for PDF a
+ * page index. [UNKNOWN_POSITION] means "not known" — the reader then falls
+ * back to [progress].
  */
 @Entity(tableName = "books")
 data class Book(
@@ -61,4 +65,8 @@ data class Book(
     val coverFileName: String? = null,
     val progressUpdated: Long? = null,
     val charIndex: Int = 0,
-)
+) {
+    companion object {
+        const val UNKNOWN_POSITION = -1
+    }
+}

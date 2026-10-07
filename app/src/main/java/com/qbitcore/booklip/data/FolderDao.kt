@@ -13,6 +13,9 @@ interface FolderDao {
     @Query("SELECT * FROM folders ORDER BY dateCreated ASC")
     fun observeAll(): Flow<List<BookFolder>>
 
+    @Query("SELECT * FROM folders")
+    suspend fun all(): List<BookFolder>
+
     @Insert(onConflict = OnConflictStrategy.REPLACE)
     suspend fun upsert(folder: BookFolder)
 

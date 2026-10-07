@@ -22,6 +22,7 @@ private val DarkColors = darkColorScheme(
     surface = BooklipSurfaceDark,
 )
 
+/** The reader passes its own [useDarkTheme] so its bars and sheets match the reading theme, not the system. */
 @Composable
 fun BooklipTheme(useDarkTheme: Boolean = isSystemInDarkTheme(), content: @Composable () -> Unit) {
     val context = LocalContext.current

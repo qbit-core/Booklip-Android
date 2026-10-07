@@ -1,6 +1,17 @@
 <manifest xmlns:android="http://schemas.android.com/apk/res/android">
 
     <uses-permission android:name="android.permission.INTERNET" />
+    <!-- Text-to-speech keeps playing with the screen off through a media-playback foreground service. -->
+    <uses-permission android:name="android.permission.FOREGROUND_SERVICE" />
+    <uses-permission android:name="android.permission.FOREGROUND_SERVICE_MEDIA_PLAYBACK" />
+    <uses-permission android:name="android.permission.POST_NOTIFICATIONS" />
+
+    <!-- Android 11+ hides other apps' services: without this the app cannot bind to any text-to-speech engine. -->
+    <queries>
+        <intent>
+            <action android:name="android.intent.action.TTS_SERVICE" />
+        </intent>
+    </queries>
 
     <application
         android:name=".BooklipApplication"
@@ -14,6 +25,7 @@
         <activity
             android:name=".MainActivity"
             android:exported="true"
+            android:launchMode="singleTop"
             android:theme="@style/Theme.Booklip"
             android:windowSoftInputMode="adjustResize">
             <intent-filter>
@@ -22,11 +34,10 @@
             </intent-filter>
         </activity>
 
-        <!-- Catches the booklip://auth/* redirect at the end of a cloud OAuth flow (see CloudConfig.kt). -->
+        <!-- Catches the redirect at the end of a cloud OAuth flow (schemes: see CloudConfig.kt). -->
         <activity
             android:name=".data.cloud.OAuthRedirectActivity"
             android:exported="true"
-            android:launchMode="singleTask"
             android:theme="@android:style/Theme.Translucent.NoTitleBar">
             <intent-filter>
                 <action android:name="android.intent.action.VIEW" />
@@ -34,7 +45,18 @@
                 <category android:name="android.intent.category.BROWSABLE" />
                 <data android:scheme="booklip" />
             </intent-filter>
+            <intent-filter>
+                <action android:name="android.intent.action.VIEW" />
+                <category android:name="android.intent.category.DEFAULT" />
+                <category android:name="android.intent.category.BROWSABLE" />
+                <data android:scheme="com.googleusercontent.apps.157712219209-5bgl7747tqfi85q082ch6si7gcth7hi8" />
+            </intent-filter>
         </activity>
+
+        <service
+            android:name=".tts.TtsPlaybackService"
+            android:exported="false"
+            android:foregroundServiceType="mediaPlayback" />
     </application>
 
 </manifest>

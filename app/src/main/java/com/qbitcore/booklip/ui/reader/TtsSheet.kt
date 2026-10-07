@@ -1,24 +1,34 @@
 package com.qbitcore.booklip.ui.reader
 
 import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.navigationBarsPadding
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.ArrowDropDown
-import androidx.compose.material.icons.filled.Pause
-import androidx.compose.material.icons.filled.PlayArrow
-import androidx.compose.material.icons.filled.Stop
+import androidx.compose.material.icons.filled.Bedtime
+import androidx.compose.material.icons.filled.Check
+import androidx.compose.material.icons.filled.PauseCircle
+import androidx.compose.material.icons.filled.PlayCircle
+import androidx.compose.material.icons.outlined.StopCircle
 import androidx.compose.material3.DropdownMenu
 import androidx.compose.material3.DropdownMenuItem
+import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.ModalBottomSheet
+import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.Slider
 import androidx.compose.material3.Text
-import androidx.compose.material3.TextButton
+import androidx.compose.material3.rememberModalBottomSheetState
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
@@ -27,88 +37,128 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.unit.dp
-import com.qbitcore.booklip.tts.TtsUiState
+import com.qbitcore.booklip.tts.TtsState
 
+@OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun TtsSheet(
-    state: TtsUiState,
+    state: TtsState,
     onTogglePlayPause: () -> Unit,
     onStop: () -> Unit,
-    onVoiceSelected: (String) -> Unit,
+    onVoiceSelected: (String?) -> Unit,
     onRateChange: (Float) -> Unit,
     onPitchChange: (Float) -> Unit,
     onSleepTimerChange: (Int?) -> Unit,
+    onDismiss: () -> Unit,
 ) {
-    Column(modifier = Modifier.padding(20.dp)) {
-        Row(
-            modifier = Modifier.fillMaxWidth(),
-            horizontalArrangement = Arrangement.Center,
-            verticalAlignment = Alignment.CenterVertically,
+    ModalBottomSheet(onDismissRequest = onDismiss, sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)) {
+        Column(
+            Modifier.verticalScroll(rememberScrollState()).padding(horizontal = 20.dp).padding(bottom = 16.dp).navigationBarsPadding(),
+            verticalArrangement = Arrangement.spacedBy(22.dp),
         ) {
-            IconButton(onClick = onTogglePlayPause, enabled = state.isReady) {
-                Icon(
-                    if (state.isPlaying) Icons.Filled.Pause else Icons.Filled.PlayArrow,
-                    contentDescription = if (state.isPlaying) "Pause" else "Play",
-                    modifier = Modifier.size(48.dp),
+            Row(
+                Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.spacedBy(24.dp, Alignment.CenterHorizontally),
+                verticalAlignment = Alignment.CenterVertically,
+            ) {
+                IconButton(onClick = onTogglePlayPause, enabled = !state.unavailable, modifier = Modifier.size(72.dp)) {
+                    Icon(
+                        if (state.isPlaying) Icons.Filled.PauseCircle else Icons.Filled.PlayCircle,
+                        contentDescription = if (state.isPlaying) "Pause" else "Play",
+                        modifier = Modifier.size(64.dp),
+                        tint = MaterialTheme.colorScheme.primary,
+                    )
+                }
+                IconButton(onClick = onStop, enabled = state.isActive, modifier = Modifier.size(56.dp)) {
+                    Icon(Icons.Outlined.StopCircle, contentDescription = "Stop", modifier = Modifier.size(44.dp))
+                }
+            }
+            if (state.unavailable) {
+                Text(
+                    "No text-to-speech engine is available on this device. Install or enable one in Settings › Accessibility › Text-to-speech output.",
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.error,
                 )
             }
-            IconButton(onClick = onStop) {
-                Icon(Icons.Filled.Stop, contentDescription = "Stop")
+
+            PanelSection("Voice") {
+                var expanded by remember { mutableStateOf(false) }
+                Box {
+                    OutlinedButton(onClick = { expanded = true }) {
+                        Text(state.voices.firstOrNull { it.name == state.selectedVoiceName }?.label ?: "Automatic")
+                        Icon(Icons.Filled.ArrowDropDown, contentDescription = null)
+                    }
+                    DropdownMenu(expanded = expanded, onDismissRequest = { expanded = false }) {
+                        DropdownMenuItem(
+                            text = { Text("Automatic (by language)") },
+                            trailingIcon = { if (state.selectedVoiceName == null) Icon(Icons.Filled.Check, contentDescription = null) },
+                            onClick = {
+                                onVoiceSelected(null)
+                                expanded = false
+                            },
+                        )
+                        state.voices.forEach { voice ->
+                            DropdownMenuItem(
+                                text = { Text(voice.label) },
+                                trailingIcon = { if (voice.name == state.selectedVoiceName) Icon(Icons.Filled.Check, contentDescription = null) },
+                                onClick = {
+                                    onVoiceSelected(voice.name)
+                                    expanded = false
+                                },
+                            )
+                        }
+                    }
+                }
+            }
+            PanelSection("Speed") { CommitSlider(state.rate, 0.5f..2.5f, onRateChange) }
+            PanelSection("Pitch") { CommitSlider(state.pitch, 0.5f..2f, onPitchChange) }
+            PanelSection("Sleep Timer") {
+                var expanded by remember { mutableStateOf(false) }
+                Box {
+                    OutlinedButton(onClick = { expanded = true }) {
+                        Icon(Icons.Filled.Bedtime, contentDescription = null, modifier = Modifier.padding(end = 8.dp).size(18.dp))
+                        Text(state.sleepMinutes?.let { "$it min" } ?: "Off")
+                        Icon(Icons.Filled.ArrowDropDown, contentDescription = null)
+                    }
+                    DropdownMenu(expanded = expanded, onDismissRequest = { expanded = false }) {
+                        DropdownMenuItem(text = { Text("Off") }, onClick = {
+                            onSleepTimerChange(null)
+                            expanded = false
+                        })
+                        listOf(5, 15, 30, 45, 60).forEach { minutes ->
+                            DropdownMenuItem(text = { Text("$minutes minutes") }, onClick = {
+                                onSleepTimerChange(minutes)
+                                expanded = false
+                            })
+                        }
+                    }
+                }
             }
         }
-
-        Text("Voice", style = MaterialTheme.typography.titleSmall, modifier = Modifier.padding(top = 16.dp))
-        VoicePicker(state, onVoiceSelected)
-
-        Text("Speed: ${"%.1f".format(state.rate)}x", style = MaterialTheme.typography.titleSmall, modifier = Modifier.padding(top = 12.dp))
-        Slider(value = state.rate, onValueChange = onRateChange, valueRange = 0.5f..2.0f)
-
-        Text("Pitch: ${"%.1f".format(state.pitch)}x", style = MaterialTheme.typography.titleSmall)
-        Slider(value = state.pitch, onValueChange = onPitchChange, valueRange = 0.5f..2.0f)
-
-        Text("Sleep timer", style = MaterialTheme.typography.titleSmall, modifier = Modifier.padding(top = 4.dp))
-        SleepTimerPicker(state.sleepMinutes, onSleepTimerChange)
     }
 }
 
+/** Commits when the drag ends: a change while speaking restarts the current sentence. */
 @Composable
-private fun VoicePicker(state: TtsUiState, onSelect: (String) -> Unit) {
-    var expanded by remember { mutableStateOf(false) }
-    val selected = state.availableVoices.firstOrNull { it.name == state.selectedVoiceName }
-    Row(
-        modifier = Modifier
-            .fillMaxWidth()
-            .padding(vertical = 4.dp),
-        verticalAlignment = Alignment.CenterVertically,
-    ) {
-        TextButton(onClick = { expanded = true }) {
-            Text(selected?.let { "${it.name}  (${it.locale.toLanguageTag()})" } ?: "Default")
-            Icon(Icons.Filled.ArrowDropDown, contentDescription = null)
-        }
-        DropdownMenu(expanded = expanded, onDismissRequest = { expanded = false }) {
-            state.availableVoices.forEach { voice ->
-                DropdownMenuItem(
-                    text = { Text("${voice.name}  (${voice.locale.toLanguageTag()})") },
-                    onClick = { onSelect(voice.name); expanded = false },
-                )
-            }
-        }
-    }
-}
-
-@Composable
-private fun SleepTimerPicker(sleepMinutes: Int?, onChange: (Int?) -> Unit) {
-    var expanded by remember { mutableStateOf(false) }
+private fun CommitSlider(value: Float, range: ClosedFloatingPointRange<Float>, onCommit: (Float) -> Unit) {
+    var dragging by remember { mutableStateOf<Float?>(null) }
+    val shown = dragging ?: value
     Row(verticalAlignment = Alignment.CenterVertically) {
-        TextButton(onClick = { expanded = true }) {
-            Text(sleepMinutes?.let { "$it min" } ?: "Off")
-            Icon(Icons.Filled.ArrowDropDown, contentDescription = null)
-        }
-        DropdownMenu(expanded = expanded, onDismissRequest = { expanded = false }) {
-            DropdownMenuItem(text = { Text("Off") }, onClick = { onChange(null); expanded = false })
-            listOf(5, 15, 30, 45, 60).forEach { minutes ->
-                DropdownMenuItem(text = { Text("$minutes minutes") }, onClick = { onChange(minutes); expanded = false })
-            }
-        }
+        Slider(
+            value = shown,
+            onValueChange = { dragging = (it * 10).toInt() / 10f },
+            onValueChangeFinished = {
+                dragging?.let(onCommit)
+                dragging = null
+            },
+            valueRange = range,
+            modifier = Modifier.weight(1f),
+        )
+        Text(
+            String.format("%.1fx", shown),
+            style = MaterialTheme.typography.bodyMedium.copy(fontFeatureSettings = "tnum"),
+            color = MaterialTheme.colorScheme.onSurfaceVariant,
+            modifier = Modifier.width(52.dp).padding(start = 8.dp),
+        )
     }
 }

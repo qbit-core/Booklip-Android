@@ -8,10 +8,11 @@ interface BookParser {
 }
 
 object ParserFactory {
-    fun parse(file: File, format: BookFormat): ParsedBook = when (format) {
+    /** [assetsDir]: where an EPUB's inline images and embedded fonts are written (null = skip them). */
+    fun parse(file: File, format: BookFormat, assetsDir: File? = null): ParsedBook = when (format) {
         BookFormat.TXT -> PlainTextParser.parse(file)
         BookFormat.MARKDOWN -> MarkdownParser.parse(file)
-        BookFormat.EPUB -> EpubParser.parse(file)
+        BookFormat.EPUB -> EpubParser.parse(file, assetsDir)
         BookFormat.PDF -> PdfParser.parse(file)
     }
 }

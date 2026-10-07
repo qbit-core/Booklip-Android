@@ -9,6 +9,9 @@ data class CloudFile(
     val isSupportedBook: Boolean
         get() = !isFolder && name.substringAfterLast('.', "").lowercase() in
             setOf("txt", "epub", "pdf", "md", "markdown")
+
+    /** What the browser's Select mode can pick: books, and folders (imported as a library folder). */
+    val isSelectable: Boolean get() = isFolder || isSupportedBook
 }
 
 interface CloudService {

@@ -2,11 +2,12 @@ plugins {
     id("com.android.application")
     id("org.jetbrains.kotlin.android")
     id("com.google.devtools.ksp")
+    id("org.jetbrains.kotlin.plugin.compose")
 }
 
 android {
     namespace = "com.qbitcore.booklip"
-    compileSdk = 34
+    compileSdk = 37
 
     defaultConfig {
         applicationId = "com.qbitcore.booklip"
@@ -18,10 +19,6 @@ android {
 
     buildFeatures {
         compose = true
-    }
-
-    composeOptions {
-        kotlinCompilerExtensionVersion = "1.5.14"
     }
 
     compileOptions {
@@ -60,12 +57,14 @@ dependencies {
     implementation("androidx.lifecycle:lifecycle-viewmodel-compose:2.8.1")
     implementation("androidx.navigation:navigation-compose:2.7.7")
 
-    implementation("androidx.room:room-runtime:2.6.1")
-    implementation("androidx.room:room-ktx:2.6.1")
-    ksp("androidx.room:room-compiler:2.6.1")
+    implementation("androidx.room:room-runtime:2.8.5")
+    implementation("androidx.room:room-ktx:2.8.5")
+    ksp("androidx.room:room-compiler:2.8.5")
 
     implementation("androidx.datastore:datastore-preferences:1.1.1")
     implementation("androidx.browser:browser:1.8.0")
+    // MediaSession + media-style notification for text-to-speech playback.
+    implementation("androidx.media:media:1.7.0")
 
     debugImplementation("androidx.compose.ui:ui-tooling")
 }
