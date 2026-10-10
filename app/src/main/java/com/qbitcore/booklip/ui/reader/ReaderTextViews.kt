@@ -1,9 +1,6 @@
 package com.qbitcore.booklip.ui.reader
 
-import android.app.SearchManager
 import android.content.Context
-import android.content.Intent
-import android.net.Uri
 import android.text.Spannable
 import android.text.SpannableString
 import android.text.Spanned
@@ -37,6 +34,8 @@ class SelectionActions(
     val onHighlight: (start: Int, end: Int) -> Unit,
     val onRemoveHighlight: (start: Int, end: Int) -> Unit,
     val hasHighlight: (start: Int, end: Int) -> Boolean,
+    /** Show the dictionary for the selected word(s). */
+    val onDefine: (term: String) -> Unit,
 )
 
 private class DecorSpan(color: Int) : BackgroundColorSpan(color)
@@ -138,7 +137,7 @@ private fun TextView.selectionCallback(blockStart: Int, actions: SelectionAction
             MENU_DEFINE -> {
                 val term = text.subSequence(range.first - blockStart, range.last - blockStart).toString()
                     .trim().trim { !it.isLetterOrDigit() }
-                if (term.isNotEmpty()) define(context, term)
+                if (term.isNotEmpty()) actions.onDefine(term)
             }
             else -> return false
         }
@@ -147,17 +146,4 @@ private fun TextView.selectionCallback(blockStart: Int, actions: SelectionAction
     }
 
     override fun onDestroyActionMode(mode: ActionMode) {}
-}
-
-/** Opens a dictionary app for [term] if one is installed, else a web definition lookup. */
-private fun define(context: Context, term: String) {
-    val attempts = listOf(
-        Intent("android.intent.action.DEFINE").putExtra(Intent.EXTRA_TEXT, term),
-        Intent(Intent.ACTION_WEB_SEARCH).putExtra(SearchManager.QUERY, "define $term"),
-        Intent(Intent.ACTION_VIEW, Uri.parse("https://www.google.com/search?q=" + Uri.encode("define $term"))),
-    )
-    for (intent in attempts) {
-        val started = runCatching { context.startActivity(intent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)) }.isSuccess
-        if (started) return
-    }
 }

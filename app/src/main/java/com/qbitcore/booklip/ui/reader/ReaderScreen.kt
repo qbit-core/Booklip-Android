@@ -97,6 +97,7 @@ fun ReaderScreen(vm: ReaderViewModel, onClose: () -> Unit) {
     var showTts by remember { mutableStateOf(false) }
     var showContents by remember { mutableStateOf(false) }
     var pendingHighlight by remember { mutableStateOf<IntRange?>(null) }
+    var definitionTerm by remember { mutableStateOf<String?>(null) }
 
     // +1 / -1 page turns from taps and swipes, consumed by whichever reader is showing.
     val pageCommands = remember { MutableSharedFlow<Int>(extraBufferCapacity = 4, onBufferOverflow = BufferOverflow.DROP_OLDEST) }
@@ -136,6 +137,7 @@ fun ReaderScreen(vm: ReaderViewModel, onClose: () -> Unit) {
                                 onHighlight = { start, end -> pendingHighlight = start..end },
                                 onRemoveHighlight = { start, end -> vm.removeHighlights(start, end) },
                                 hasHighlight = { start, end -> vm.highlights.value.any { it.location < end && it.end > start } },
+                            onDefine = { term -> definitionTerm = term },
                             )
                         }
                         val insets = WindowInsets.statusBars.asPaddingValues()
@@ -319,6 +321,7 @@ fun ReaderScreen(vm: ReaderViewModel, onClose: () -> Unit) {
                 onDeleteHighlight = vm::deleteHighlight,
             )
         }
+        definitionTerm?.let { term -> DefinitionDialog(term, onDismiss = { definitionTerm = null }) }
         pendingHighlight?.let { range ->
             HighlightColorDialog(
                 onPick = { color ->
