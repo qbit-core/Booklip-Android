@@ -1,4 +1,4 @@
-<manifest xmlns:android="http://schemas.android.com/apk/res/android">
+<manifest xmlns:android="http://schemas.android.com/apk/res/android" package="com.qbitcore.booklip">
 
     <uses-permission android:name="android.permission.INTERNET" />
     <!-- Text-to-speech keeps playing with the screen off through a media-playback foreground service. -->
@@ -49,7 +49,14 @@
                 <action android:name="android.intent.action.VIEW" />
                 <category android:name="android.intent.category.DEFAULT" />
                 <category android:name="android.intent.category.BROWSABLE" />
-                <data android:scheme="com.googleusercontent.apps.157712219209-5bgl7747tqfi85q082ch6si7gcth7hi8" />
+                <data android:scheme="com.googleusercontent.apps.157712219209-8819d5dhcqlu5k0i5n1miji33l1tnirt" />
+            </intent-filter>
+            <!-- OneDrive (Azure "Android" platform): msauth://<package>/<signature hash> -->
+            <intent-filter>
+                <action android:name="android.intent.action.VIEW" />
+                <category android:name="android.intent.category.DEFAULT" />
+                <category android:name="android.intent.category.BROWSABLE" />
+                <data android:scheme="msauth" android:host="com.qbitcore.booklip" />
             </intent-filter>
         </activity>
 

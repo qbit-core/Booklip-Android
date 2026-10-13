@@ -43,6 +43,21 @@ android {
     }
 }
 
+tasks.matching { it.name.startsWith("process") && it.name.endsWith("Resources") }.configureEach {
+    doFirst {
+        outputs.files.files.forEach { file ->
+            if (file.isDirectory) {
+                file.mkdirs()
+            } else {
+                file.parentFile?.mkdirs()
+            }
+        }
+        val buildDir = layout.buildDirectory.get().asFile
+        val variantName = name.removePrefix("process").removeSuffix("Resources").replaceFirstChar { it.lowercase() }
+        File(buildDir, "intermediates/linked_resources_binary_format/$variantName/$name").mkdirs()
+    }
+}
+
 dependencies {
     implementation(platform("androidx.compose:compose-bom:2024.06.00"))
     implementation("androidx.compose.ui:ui")

@@ -177,13 +177,17 @@ An EPUB image is one `U+FFFC` + `"\n\n"` in the text, as on iOS.
 
 ## Cloud OAuth
 
-`CloudConfig.kt` uses the client IDs the iOS app is registered with. Dropbox
-(`booklip://auth/dropbox`) and OneDrive (`booklip://auth/onedrive`) redirects
-are the same as on iOS. Google uses the iOS-type client with its
-reversed-client-id redirect, which works but should be replaced by a proper
-"Android" OAuth client before a Play Store release (instructions in the file
-header). Redirect schemes are declared twice: `CloudConfig.kt` and the
-intent-filters of `OAuthRedirectActivity` in the manifest.
+`CloudConfig.kt` holds the client IDs and redirects. Dropbox uses the iOS
+app key with its own redirect (`booklip://auth/dropbox/android`). OneDrive
+uses the iOS Azure registration with an "Android" platform redirect
+(`msauth://com.qbitcore.booklip/<signature hash>`; only the string has to
+match what Azure lists, the app does not use MSAL). Google uses the project's
+"Android" OAuth client with its reversed-client-id redirect, which needs
+"Custom URI scheme" enabled in the client's advanced settings. Redirect
+schemes are declared twice — `CloudConfig.kt` and the intent-filters of
+`OAuthRedirectActivity` in the manifest (`booklip`, the reversed Google
+client ID, `msauth`) — and the Google scheme must be re-derived whenever
+`GOOGLE_CLIENT_ID` changes.
 
 `OAuthRedirectActivity` hands the redirect to `OAuthRedirectBridge` and
 brings `MainActivity` back with `CLEAR_TOP` to close the sign-in tab. Closing

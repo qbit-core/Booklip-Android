@@ -11,3 +11,6 @@ gradle/wrapper/dists/
 
 # Raw emulator captures; the composed Play Store screenshots are tracked
 PlayStore/screenshots/raw/
+
+# Release bundles built from Android Studio
+app/release/
