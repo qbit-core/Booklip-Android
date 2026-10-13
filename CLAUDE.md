@@ -199,3 +199,19 @@ provider out.
 `ic_launcher_monochrome.png` are generated from the iOS artwork
 (`Assets.xcassets/iOS.appiconset/app_icon_light.png`), scaled to 70 % so the
 book sits inside the adaptive-icon safe zone.
+
+## Play Store screenshots
+
+`PlayStore/screenshots/` mirrors the iOS `AppStore/screenshots/` pipeline:
+
+- `seed.py` — replaces the debug app's data on the running emulator with the
+  sample library (12 public-domain books, bookmarks, stats, sepia / Paper
+  Book settings) by writing the Room database and DataStore files through
+  `run-as`. Cloud sign-ins are left alone.
+- `tools.sh` — `demo_on` / `demo_off` (clean 9:41 status bar),
+  `tablet_on` / `tablet_off` (the phone emulator at 1600×2560, 320 dpi),
+  `shot <name>` (writes `raw/<name>.png`), `ui`, `tapd`.
+- `raw/{phone,tablet}_<slide>.png` — the nine captures per device.
+- `compose.py [phone|tablet]` — headline + framed screenshot →
+  `{ko,en}/{phone,tablet}/NN_<slide>.png`. Phone 1440×2880, tablet
+  1600×2560 (Play allows a long side of at most 2× the short side).

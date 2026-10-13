@@ -8,3 +8,6 @@ captures/
 .externalNativeBuild/
 .cxx/
 gradle/wrapper/dists/
+
+# Raw emulator captures; the composed Play Store screenshots are tracked
+PlayStore/screenshots/raw/
