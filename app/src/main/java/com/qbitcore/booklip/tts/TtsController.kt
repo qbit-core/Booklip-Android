@@ -140,15 +140,35 @@ class TtsController(context: Context, private val settings: SettingsRepository) 
             (tag.startsWith("en-us") || tag.startsWith("ko")) && !voice.isNetworkConnectionRequired &&
                 voice.features?.contains(TextToSpeech.Engine.KEY_FEATURE_NOT_INSTALLED) != true
         }.sortedWith(compareBy({ it.locale.toLanguageTag() }, { it.name }))
-        val counters = HashMap<String, Int>()
-        val voices = engineVoices.map { voice ->
-            val language = voice.locale.getDisplayName(Locale.getDefault())
-            val n = counters.merge(language, 1, Int::plus)
-            TtsVoice(voice.name, "$language · Voice $n")
-        }
+        // The engine's own entry for "the language's default voice" repeats one
+        // of the others; list it only when it is all there is.
+        val hasNamed = engineVoices.groupBy { it.locale.language }.mapValues { (_, list) -> list.any { !isLanguageDefault(it) } }
+        engineVoices = engineVoices.filter { !(isLanguageDefault(it) && hasNamed[it.locale.language] == true) }
+        val used = HashSet<String>()
+        val voices = engineVoices.map { voice -> TtsVoice(voice.name, "${personName(voice, used)}  (${voice.locale.toLanguageTag()})") }
         _state.update { s ->
             s.copy(voices = voices, selectedVoiceName = s.selectedVoiceName?.takeIf { name -> voices.any { it.name == name } })
         }
+    }
+
+    private fun isLanguageDefault(voice: Voice): Boolean = voice.name.endsWith("-language", ignoreCase = true)
+
+    /**
+     * Android voices have no names, only engine ids such as
+     * `ko-kr-x-ism-local`. The picker shows a person's name instead, the way
+     * iOS lists Yuna or Flo: a fixed name for each Google voice id that is
+     * known, and otherwise the next unused name for that language — the same
+     * voice keeps the same name as long as the engine's voice list does.
+     */
+    private fun personName(voice: Voice, used: MutableSet<String>): String {
+        val korean = voice.locale.language == "ko"
+        val code = Regex("-x-([a-z0-9]+)-").find(voice.name.lowercase())?.groupValues?.get(1)
+        val known = (if (korean) KOREAN_VOICE_NAMES else ENGLISH_VOICE_NAMES)[code]
+        val name = known?.takeIf { it !in used }
+            ?: (if (korean) KOREAN_NAME_POOL else ENGLISH_NAME_POOL).firstOrNull { it !in used }
+            ?: "Voice ${used.size + 1}"
+        used += name
+        return name
     }
 
     /** What the media notification / lock screen shows while speaking. */
@@ -414,6 +434,15 @@ class TtsController(context: Context, private val settings: SettingsRepository) 
         private const val MAX_CHUNK_LENGTH = 240
         private const val MAX_SENTENCE_LENGTH = 2000
         private const val QUEUE_DEPTH = 3
+
+        // Google text-to-speech voice ids → display names.
+        private val KOREAN_VOICE_NAMES = mapOf("ism" to "Yuna", "kob" to "Sora", "koc" to "Minsu", "kod" to "Jun")
+        private val ENGLISH_VOICE_NAMES = mapOf(
+            "sfg" to "Samantha", "iob" to "Flo", "iog" to "Ava", "tpc" to "Nicky", "tpf" to "Allison",
+            "iol" to "Eddy", "iom" to "Reed", "tpd" to "Aaron",
+        )
+        private val KOREAN_NAME_POOL = listOf("Yuna", "Sora", "Minsu", "Jun", "Jihu", "Suho")
+        private val ENGLISH_NAME_POOL = listOf("Samantha", "Flo", "Ava", "Eddy", "Reed", "Nicky", "Aaron", "Allison", "Tom", "Zoe")
 
         private val AUDIO_ATTRIBUTES: AudioAttributes = AudioAttributes.Builder()
             .setUsage(AudioAttributes.USAGE_MEDIA)
