@@ -1,7 +1,11 @@
 #!/usr/bin/env python3
 """Compose Google Play marketing screenshots from raw emulator captures.
 
-usage: compose.py [device ...]   (phone, tablet; default: both)
+usage: compose.py [device ...]   (phone, tablet, feature; default: all)
+
+"feature" renders every slide as a 1024x500 landscape banner — the size of
+Play's feature graphic — with the headline beside the phone capture, plus
+00_feature.png (icon, name and tagline) meant for the feature-graphic slot.
 
 Same slides and layout as the iOS App Store set
 (~/Workspace/iOS/ReaderApp/AppStore/screenshots/compose.py). Canvas sizes
@@ -126,9 +130,103 @@ def compose(device, lang, slide, n):
     return path
 
 
+FEATURE = (1024, 500)
+ICON = os.path.join(os.path.dirname(S), "icon_512.png")
+TAGLINE = {"ko": "원본 그대로 읽고, 음성으로 듣는 이북 리더", "en": "Read your books your way — or listen"}
+
+
+def wrap(draw, text, font, max_w):
+    lines, cur = [], ""
+    for word in text.split(" "):
+        trial = (cur + " " + word).strip()
+        if cur and draw.textlength(trial, font=font) > max_w:
+            lines.append(cur)
+            cur = word
+        else:
+            cur = trial
+    lines.append(cur)
+    return lines
+
+
+def phone_on(canvas, shot, right=70, top=46, width=300):
+    """Pastes the framed phone capture at the right edge, running off the bottom."""
+    W, H = canvas.size
+    src = Image.open(os.path.join(SHOTS, f"phone_{shot}.png")).convert("RGB")
+    sh = int(src.height * width / src.width)
+    src = src.resize((width, sh), Image.LANCZOS)
+    b, r = 7, 30
+    frame = Image.new("RGB", (width + 2 * b, sh + 2 * b), "#0B0B0D")
+    frame.paste(src, (b, b), rounded_mask(src.size, r - b))
+    mask = rounded_mask(frame.size, r)
+    x = W - right - frame.width
+    shadow = Image.new("RGBA", (W, H), (0, 0, 0, 0))
+    layer = Image.new("RGBA", frame.size, (0, 0, 0, 0))
+    layer.paste((0, 0, 0, 110), (0, 0), mask)
+    shadow.paste(layer, (x, top + 12), layer)
+    shadow = shadow.filter(ImageFilter.GaussianBlur(16))
+    canvas = Image.alpha_composite(canvas.convert("RGBA"), shadow).convert("RGB")
+    canvas.paste(frame, (x, top), mask)
+    return canvas, x
+
+
+def compose_feature(lang, slide, n):
+    shot, h_ko, s_ko, h_en, s_en, bg, fg, subfg = slide
+    head, sub = (h_ko, s_ko) if lang == "ko" else (h_en, s_en)
+    canvas, x = phone_on(Image.new("RGB", FEATURE, bg), shot)
+    draw = ImageDraw.Draw(canvas)
+    left, max_w = 64, x - 64 - 48
+    f1 = fit_text(draw, head, BOLD, 60, max_w)
+    f2 = ImageFont.truetype(FONT, 25, index=REG)
+    lines = wrap(draw, sub, f2, max_w)
+    gap, lh = 22, 36
+    y = (FEATURE[1] - (f1.size + gap + lh * len(lines))) // 2 - 6
+    draw.text((left, y), head, font=f1, fill=fg)
+    y += f1.size + gap
+    for line in lines:
+        draw.text((left, y), line, font=f2, fill=subfg)
+        y += lh
+    return save_feature(canvas, lang, f"{n:02d}_{shot}.png")
+
+
+def compose_feature_cover(lang):
+    """Icon, app name and tagline beside the library — for the feature-graphic slot."""
+    bg, fg, subfg = "#1C2433", "#FFFFFF", "#B7C2D6"
+    canvas, x = phone_on(Image.new("RGB", FEATURE, bg), "library")
+    draw = ImageDraw.Draw(canvas)
+    left, max_w = 64, x - 64 - 48
+    icon = Image.open(ICON).convert("RGB").resize((104, 104), Image.LANCZOS)
+    f1 = ImageFont.truetype(FONT, 76, index=BOLD)
+    f2 = ImageFont.truetype(FONT, 27, index=REG)
+    lines = wrap(draw, TAGLINE[lang], f2, max_w)
+    y = (FEATURE[1] - (104 + 26 + 76 + 22 + 38 * len(lines))) // 2 - 4
+    canvas.paste(icon, (left, y), rounded_mask(icon.size, 24))
+    y += 104 + 26
+    draw.text((left, y), "Booklip", font=f1, fill=fg)
+    y += 76 + 22
+    for line in lines:
+        draw.text((left, y), line, font=f2, fill=subfg)
+        y += 38
+    return save_feature(canvas, lang, "00_feature.png")
+
+
+def save_feature(canvas, lang, name):
+    out_dir = os.path.join(S, lang, "feature")
+    os.makedirs(out_dir, exist_ok=True)
+    path = os.path.join(out_dir, name)
+    # Play wants a 24-bit image with no alpha channel here.
+    canvas.convert("RGB").save(path, optimize=True)
+    return path
+
+
 for device in DEVICES:
     if ONLY and device not in ONLY:
         continue
     for lang in ("ko", "en"):
         for i, slide in enumerate(SLIDES, 1):
             print(os.path.relpath(compose(device, lang, slide, i), S))
+
+if not ONLY or "feature" in ONLY:
+    for lang in ("ko", "en"):
+        print(os.path.relpath(compose_feature_cover(lang), S))
+        for i, slide in enumerate(SLIDES, 1):
+            print(os.path.relpath(compose_feature(lang, slide, i), S))

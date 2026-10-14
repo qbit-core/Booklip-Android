@@ -12,7 +12,7 @@ translation, but **positions, highlights and chapter offsets use the same
 index space as iOS** (UTF-16 offsets into the rendered text).
 
 - Package / applicationId: `com.qbitcore.booklip`
-- Kotlin + Jetpack Compose (Material 3), min SDK 26, target SDK 34,
+- Kotlin + Jetpack Compose (Material 3), min SDK 26, target SDK 36,
   **compile SDK 37** (needed for the PDF text APIs — see "PDF")
 - Persistence: Room (books, folders, bookmarks, highlights) + DataStore
   Preferences (reading settings, library sort/view mode, TTS prefs, reading

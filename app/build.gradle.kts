@@ -12,9 +12,9 @@ android {
     defaultConfig {
         applicationId = "com.qbitcore.booklip"
         minSdk = 26
-        targetSdk = 34
-        versionCode = 1
-        versionName = "0.1.0"
+        targetSdk = 36
+        versionCode = 4
+        versionName = "0.9.1"
     }
 
     buildFeatures {
@@ -32,7 +32,8 @@ android {
 
     buildTypes {
         release {
-            isMinifyEnabled = false
+            isMinifyEnabled = true
+            isShrinkResources = true
             proguardFiles(getDefaultProguardFile("proguard-android-optimize.txt"), "proguard-rules.pro")
         }
     }
@@ -41,6 +42,7 @@ android {
         resources.excludes.add("META-INF/*.version")
         resources.excludes.add("META-INF/LICENSE*")
     }
+    buildToolsVersion = "36.0.0"
 }
 
 tasks.matching { it.name.startsWith("process") && it.name.endsWith("Resources") }.configureEach {
