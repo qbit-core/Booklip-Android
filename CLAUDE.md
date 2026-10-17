@@ -51,9 +51,10 @@ auto-scroll, nested table of contents (NCX / nav, anchor-accurate), bookmarks
 (toggle, ticks on the progress bar), highlights (4 colours, character
 ranges), in-book search with match stepping, Define, exact position restore,
 "Page X / Y". **Language detection** per book (`LanguageDetector`, same codes as iOS).
-**TTS**: English / Korean / Japanese / Chinese voices plus the book's language
-("Automatic" = best voice for the book's language; a pick is remembered per
-language),
+**TTS**: the voice list holds only the book's language in its main region
+(CLDR likely subtags: en → US, zh-Hant → TW; else the region with the most
+voices) — English / Korean / Japanese / Chinese until the language is known.
+"Automatic" = the best-rated of those; a pick is remembered per language;
 speed, pitch, sentence highlight + follow, sleep timer, background playback
 with media notification / lock-screen controls. **Reading stats**. **Cloud
 import**: Dropbox, OneDrive, Google Drive with Select mode (files and whole

@@ -30,6 +30,12 @@ sign-in setup, [PLAY_STORE.md](PLAY_STORE.md) for the Google Play listing, and
 
 Compiled from the commit history, by date, newest first.
 
+#### 2026-10-17
+- TTS voice list shows only the book's language in its main region (an
+  English book lists en-US voices, not every English-speaking country), and
+  no longer adds other languages' voices once the language is known — as on
+  iOS. "Automatic" uses the best-rated of those voices.
+
 #### 2026-10-16
 - **Version 0.9.3 (versionCode 6).**
 - The app no longer ships native code: DataStore's
@@ -129,6 +135,12 @@ Compose(Material 3)로 작성했고 AndroidX 라이브러리와 플랫폼 SDK만
 ### 변경 이력
 
 커밋 기록을 날짜별로 정리한 것입니다(최신 날짜부터).
+
+#### 2026-10-17
+- TTS 음성 목록에 책 언어의 대표 지역 음성만 표시합니다 (영어 책이면 모든
+  영어권 국가가 아니라 en-US만). 언어를 감지한 뒤에는 다른 언어의 음성도
+  더 이상 함께 표시하지 않습니다 (iOS와 동일). "자동"은 그중 품질이 가장 좋은
+  음성을 씁니다.
 
 #### 2026-10-16
 - **버전 0.9.3 (versionCode 6).**
