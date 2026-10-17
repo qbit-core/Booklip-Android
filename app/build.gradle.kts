@@ -13,8 +13,8 @@ android {
         applicationId = "com.qbitcore.booklip"
         minSdk = 26
         targetSdk = 36
-        versionCode = 5
-        versionName = "0.9.2"
+        versionCode = 6
+        versionName = "0.9.3"
     }
 
     buildFeatures {
@@ -41,6 +41,11 @@ android {
     packaging {
         resources.excludes.add("META-INF/*.version")
         resources.excludes.add("META-INF/LICENSE*")
+        // DataStore's only native library, loaded solely by multi-process
+        // DataStore. Every store here is a single-process preferencesDataStore,
+        // so it is never used; leaving it out keeps the app free of native code
+        // (no Play "upload debug symbols" warning — Google ships it stripped).
+        jniLibs.excludes.add("**/libdatastore_shared_counter.so")
     }
     buildToolsVersion = "36.0.0"
 }

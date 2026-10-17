@@ -31,6 +31,12 @@ sign-in setup, [PLAY_STORE.md](PLAY_STORE.md) for the Google Play listing, and
 Compiled from the commit history, by date, newest first.
 
 #### 2026-10-16
+- **Version 0.9.3 (versionCode 6).**
+- The app no longer ships native code: DataStore's
+  `libdatastore_shared_counter.so`, used only by multi-process DataStore
+  (Booklip's stores are single-process), is left out of the build. Google
+  Play no longer asks for native debug symbols, which that prebuilt, stripped
+  library could not provide anyway.
 - **Version 0.9.2 (versionCode 5).**
 - Books are tagged with their language when imported (English, Korean,
   Japanese, Simplified/Traditional Chinese, …), detected on-device from the
@@ -125,6 +131,11 @@ Compose(Material 3)로 작성했고 AndroidX 라이브러리와 플랫폼 SDK만
 커밋 기록을 날짜별로 정리한 것입니다(최신 날짜부터).
 
 #### 2026-10-16
+- **버전 0.9.3 (versionCode 6).**
+- 앱에 네이티브 코드가 더 이상 포함되지 않습니다: 다중 프로세스 DataStore에서만
+  쓰는 DataStore의 `libdatastore_shared_counter.so`를 빌드에서 뺐습니다(Booklip의
+  저장소는 모두 단일 프로세스). Google Play가 네이티브 디버그 기호를 요구하지
+  않으며, 이미 기호가 제거된 채 배포되는 라이브러리라 어차피 제공할 수 없었습니다.
 - **버전 0.9.2 (versionCode 5).**
 - 책을 가져올 때 본문으로 언어(영어, 한국어, 일본어, 중국어 간체/번체 등)를
   기기에서 감지해 기록합니다. 이미 서재에 있는 책은 백그라운드에서 한 번
