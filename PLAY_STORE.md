@@ -30,13 +30,13 @@ MAKE IT YOURS
 Choose the font, size and line spacing, and pick one of six themes — Default, Sepia, Dark, Forest, Ocean, Rose. Turn pages like a paper book with a tap or a swipe, or scroll the whole book in one continuous column.
 
 LISTEN INSTEAD
-Text-to-speech reads your books aloud in English and Korean, choosing the voice by the language of the text or using the one you pick. The sentence being read is highlighted and the page follows along. Adjust speed and pitch, set a sleep timer, and keep listening with the screen off — playback controls stay in the notification shade and on the lock screen. Auto-scroll keeps the page moving when you would rather read.
+Text-to-speech reads your books aloud in English, Korean, Japanese, Chinese and more: each book is read in a voice for its own language, and the voice you pick is remembered for every book in that language. The sentence being read is highlighted and the page follows along. Adjust speed and pitch, set a sleep timer, and keep listening with the screen off — playback controls stay in the notification shade and on the lock screen. Auto-scroll keeps the page moving when you would rather read.
 
 NEVER LOSE YOUR PLACE
 Jump to any chapter from the table of contents, drop bookmarks, and highlight passages in four colors. Search inside the book and step through every match. Select a word to look it up in the dictionary without leaving the page. Your reading position is saved automatically, and the page number is always in view.
 
 ORGANIZE YOUR LIBRARY
-Group books into folders, sort them, switch between grid and list layouts, search by title or author, and select several books to move or delete at once. Real covers make every book easy to spot.
+Group books into folders, sort them, switch between grid and list layouts, search by title or author, filter by the language each book is written in, and select several books — tap them or sweep across with a drag — to move or delete at once. Real covers make every book easy to spot.
 
 BRING BOOKS FROM THE CLOUD
 Connect Dropbox, Google Drive or OneDrive and import straight from your folders. Pick single files, several at once, or a whole folder — it arrives as a folder in your library. Access is read-only: nothing in your cloud is ever changed or deleted, and imported books read offline.

@@ -18,6 +18,8 @@ private val Context.dataStore by preferencesDataStore(name = "reading_settings")
 data class LibraryPrefs(
     val sortOption: SortOption = SortOption.DATE_ADDED,
     val viewMode: ViewMode = ViewMode.MEDIUM_GRID,
+    /** Library-wide language filter (a `Book.language` code); null = all. */
+    val languageFilter: String? = null,
 )
 
 data class TtsPrefs(val voiceName: String? = null, val rate: Float = 1f, val pitch: Float = 1f)
@@ -33,9 +35,13 @@ class SettingsRepository(private val context: Context) {
         val AUTO_SCROLL_SPEED = floatPreferencesKey("autoScrollSpeed")
         val SORT = stringPreferencesKey("sortOption")
         val VIEW_MODE = stringPreferencesKey("viewMode")
+        val LANGUAGE_FILTER = stringPreferencesKey("languageFilter")
         val TTS_VOICE = stringPreferencesKey("ttsVoice")
         val TTS_RATE = floatPreferencesKey("ttsRate")
         val TTS_PITCH = floatPreferencesKey("ttsPitch")
+        /** The voice the user picked for books in one language. */
+        const val TTS_VOICE_PREFIX = "ttsVoice."
+        fun ttsVoiceFor(language: String) = stringPreferencesKey(TTS_VOICE_PREFIX + language)
     }
 
     val settings: Flow<ReadingSettings> = context.dataStore.data.map { it.toSettings() }.distinctUntilChanged()
@@ -44,6 +50,7 @@ class SettingsRepository(private val context: Context) {
         LibraryPrefs(
             sortOption = enumOf(prefs[Keys.SORT], SortOption.DATE_ADDED),
             viewMode = enumOf(prefs[Keys.VIEW_MODE], ViewMode.MEDIUM_GRID),
+            languageFilter = prefs[Keys.LANGUAGE_FILTER],
         )
     }.distinctUntilChanged()
 
@@ -70,6 +77,25 @@ class SettingsRepository(private val context: Context) {
 
     suspend fun setViewMode(mode: ViewMode) {
         context.dataStore.edit { it[Keys.VIEW_MODE] = mode.name }
+    }
+
+    suspend fun setLanguageFilter(code: String?) {
+        context.dataStore.edit { if (code != null) it[Keys.LANGUAGE_FILTER] = code else it.remove(Keys.LANGUAGE_FILTER) }
+    }
+
+    /** The voice the user picked per book language; a language not listed is automatic. */
+    val ttsLanguageVoices: Flow<Map<String, String>> = context.dataStore.data.map { prefs ->
+        prefs.asMap().entries.mapNotNull { (key, value) ->
+            val language = key.name.removePrefix(Keys.TTS_VOICE_PREFIX)
+            if (language != key.name && value is String) language to value else null
+        }.toMap()
+    }.distinctUntilChanged()
+
+    suspend fun setTtsVoiceFor(language: String, voiceName: String?) {
+        context.dataStore.edit {
+            val key = Keys.ttsVoiceFor(language)
+            if (voiceName != null) it[key] = voiceName else it.remove(key)
+        }
     }
 
     suspend fun setTtsPrefs(prefs: TtsPrefs) {

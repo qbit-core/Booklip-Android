@@ -4,7 +4,9 @@ import android.graphics.Bitmap
 import android.graphics.Color
 import android.graphics.Canvas
 import android.graphics.pdf.PdfRenderer
+import android.os.Build
 import android.os.ParcelFileDescriptor
+import androidx.annotation.RequiresApi
 import java.io.ByteArrayOutputStream
 import java.io.File
 
@@ -36,6 +38,34 @@ object PdfParser : BookParser {
             }
         }
     }
+
+    /**
+     * Text of a few pages near the start, middle and end — enough for
+     * [LanguageDetector]. null before Android 15, which has no PDF text layer
+     * (the book's language then stays undetected rather than "no text").
+     */
+    fun sampleText(file: File): String? {
+        if (Build.VERSION.SDK_INT < 35) return null
+        return runCatching {
+            ParcelFileDescriptor.open(file, ParcelFileDescriptor.MODE_READ_ONLY).use { fd ->
+                PdfRenderer(fd).use { renderer -> sampleTextApi35(renderer) }
+            }
+        }.getOrNull()
+    }
+
+    @RequiresApi(35)
+    private fun sampleTextApi35(renderer: PdfRenderer): String {
+        val count = renderer.pageCount
+        val pages = listOf(0.05, 0.5, 0.8)
+            .flatMap { fraction -> (count * fraction).toInt().let { it until it + SAMPLE_PAGES } }
+            .filter { it in 0 until count }
+            .distinct()
+        return pages.joinToString("\n") { index ->
+            renderer.openPage(index).use { page -> page.textContents.joinToString("\n") { it.text } }
+        }
+    }
+
+    private const val SAMPLE_PAGES = 3
 
     private fun renderCover(renderer: PdfRenderer): ByteArray? {
         val page = renderer.openPage(0)

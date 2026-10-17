@@ -8,6 +8,8 @@ import com.qbitcore.booklip.model.BookFormat
 import com.qbitcore.booklip.model.Bookmark
 import com.qbitcore.booklip.model.Highlight
 import com.qbitcore.booklip.model.HighlightColor
+import com.qbitcore.booklip.parser.LanguageDetector
+import com.qbitcore.booklip.parser.PdfParser
 import java.io.File
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.Flow
@@ -74,9 +76,28 @@ class BookRepository(
             wordCount = parsed.wordCount,
             folderId = folderId,
             coverFileName = coverFileName,
+            language = if (format == BookFormat.PDF) PdfParser.sampleText(dest)?.let(LanguageDetector::detect)
+            else LanguageDetector.detect(parsed.plainText),
         )
         db.bookDao().upsert(book)
         return book
+    }
+
+    /**
+     * Books imported before language detection existed: read each once and
+     * store its language. Detection always stores a value ("und" when there is
+     * no text or the file can't be read), so this finishes for good — except
+     * for PDFs on Android < 15, which have no text to read and stay undetected.
+     */
+    suspend fun detectMissingLanguages() = withContext(Dispatchers.IO) {
+        for (book in db.bookDao().withoutLanguage()) {
+            val text = if (book.format == BookFormat.PDF) {
+                PdfParser.sampleText(fileStore.bookFile(book.fileName)) ?: continue
+            } else {
+                runCatching { fileStore.loadContent(book).text }.getOrDefault("")
+            }
+            db.bookDao().setLanguage(book.id, LanguageDetector.detect(text))
+        }
     }
 
     /** [charIndex] null = "not known" → the stored index is kept. A 0 is a real position and is stored. */

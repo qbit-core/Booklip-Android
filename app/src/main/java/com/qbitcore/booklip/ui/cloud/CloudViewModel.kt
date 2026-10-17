@@ -139,6 +139,11 @@ class CloudViewModel(private val app: BooklipApplication) : ViewModel() {
         selected = if (file.id in selected) selected - file.id else selected + file.id
     }
 
+    /** Replaces the selection (drag selection sweeps a whole range at once). */
+    fun setSelection(ids: Set<String>) {
+        selected = ids
+    }
+
     fun toggleSelectAll() {
         selected = if (allSelected) emptySet() else selectableFiles.map { it.id }.toSet()
     }

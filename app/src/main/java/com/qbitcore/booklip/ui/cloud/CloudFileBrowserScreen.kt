@@ -15,6 +15,7 @@ import androidx.compose.foundation.layout.navigationBarsPadding
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.foundation.lazy.items
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
@@ -54,6 +55,9 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import com.qbitcore.booklip.data.cloud.CloudFile
+import com.qbitcore.booklip.ui.dragSelectItem
+import com.qbitcore.booklip.ui.dragSelection
+import com.qbitcore.booklip.ui.rememberDragSelectState
 import com.qbitcore.booklip.ui.reader.EmptyState
 
 /**
@@ -128,21 +132,38 @@ fun CloudFileBrowserScreen(viewModel: CloudViewModel, onExit: () -> Unit, onImpo
                     TextButton(onClick = viewModel::reload) { Text("Try Again") }
                 }
                 viewModel.files.isEmpty() -> EmptyState(Icons.Filled.FolderOff, "No Supported Files", "This folder has no .txt, .epub, .pdf, or .md files.")
-                else -> LazyColumn(contentPadding = PaddingValues(vertical = 8.dp)) {
-                    items(viewModel.files, key = { it.id }) { file ->
-                        FileRow(
-                            file = file,
-                            isSelecting = viewModel.isSelecting,
-                            isSelected = file.id in viewModel.selected,
-                            onClick = {
-                                when {
-                                    viewModel.isSelecting -> viewModel.toggle(file)
-                                    file.isFolder -> viewModel.openFolder(file)
-                                    file.isSupportedBook -> viewModel.importSingle(file)
-                                }
-                            },
-                        )
-                        HorizontalDivider(Modifier.padding(start = 60.dp), color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.5f))
+                else -> {
+                    val dragState = rememberDragSelectState<String>()
+                    val listState = rememberLazyListState()
+                    val selectableIds = viewModel.selectableFiles.map { it.id }
+                    LazyColumn(
+                        state = listState,
+                        contentPadding = PaddingValues(vertical = 8.dp),
+                        modifier = Modifier.dragSelection(
+                            enabled = viewModel.isSelecting && !importing,
+                            state = dragState,
+                            keys = selectableIds,
+                            selected = viewModel.selected,
+                            onSelectionChange = viewModel::setSelection,
+                            scrollState = listState,
+                        ),
+                    ) {
+                        items(viewModel.files, key = { it.id }) { file ->
+                            FileRow(
+                                modifier = if (file.isSelectable) Modifier.dragSelectItem(dragState, file.id) else Modifier,
+                                file = file,
+                                isSelecting = viewModel.isSelecting,
+                                isSelected = file.id in viewModel.selected,
+                                onClick = {
+                                    when {
+                                        viewModel.isSelecting -> viewModel.toggle(file)
+                                        file.isFolder -> viewModel.openFolder(file)
+                                        file.isSupportedBook -> viewModel.importSingle(file)
+                                    }
+                                },
+                            )
+                            HorizontalDivider(Modifier.padding(start = 60.dp), color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.5f))
+                        }
                     }
                 }
             }
@@ -172,12 +193,12 @@ fun CloudFileBrowserScreen(viewModel: CloudViewModel, onExit: () -> Unit, onImpo
 }
 
 @Composable
-private fun FileRow(file: CloudFile, isSelecting: Boolean, isSelected: Boolean, onClick: () -> Unit) {
+private fun FileRow(file: CloudFile, isSelecting: Boolean, isSelected: Boolean, onClick: () -> Unit, modifier: Modifier = Modifier) {
     val context = LocalContext.current
     val selectable = file.isSelectable
     val primary = if (selectable) MaterialTheme.colorScheme.onSurface else MaterialTheme.colorScheme.onSurface.copy(alpha = 0.45f)
     Row(
-        Modifier.fillMaxWidth().clickable(enabled = selectable, onClick = onClick).padding(horizontal = 16.dp, vertical = 11.dp),
+        modifier.fillMaxWidth().clickable(enabled = selectable, onClick = onClick).padding(horizontal = 16.dp, vertical = 11.dp),
         verticalAlignment = Alignment.CenterVertically,
         horizontalArrangement = Arrangement.spacedBy(12.dp),
     ) {

@@ -115,6 +115,7 @@ class PdfReaderViewModel(private val app: BooklipApplication, private val bookId
             }
             book = loaded
             tts.setNowPlaying(loaded.title, loaded.author)
+            tts.setBookLanguage(loaded.language)   // voice in the book's language
             try {
                 val sizes = withContext(Dispatchers.IO) {
                     val fd = ParcelFileDescriptor.open(repository.bookFile(loaded), ParcelFileDescriptor.MODE_READ_ONLY)

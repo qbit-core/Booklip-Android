@@ -142,6 +142,7 @@ fun FolderDetailScreen(vm: LibraryViewModel, folderId: String?, onBack: () -> Un
                         TextButton(onClick = { vm.selecting(false) }) { Text("Done") }
                     } else {
                         ViewOptionsMenu(state, vm::setViewMode, vm::setSortOption)
+                        LanguageMenu(state, vm::setLanguageFilter)
                         IconButton(onClick = { vm.selecting(true) }, enabled = all.isNotEmpty()) {
                             Icon(Icons.Outlined.CheckCircle, contentDescription = "Select")
                         }
@@ -159,6 +160,8 @@ fun FolderDetailScreen(vm: LibraryViewModel, folderId: String?, onBack: () -> Un
                 // The folder was deleted while open (or the id is stale).
                 folderId != null && folder == null && state.isLoaded -> EmptyState(Icons.Filled.Folder, "No Folder", "This folder no longer exists.")
                 all.isEmpty() -> EmptyState(Icons.Filled.Folder, "No Books", "Select books and choose Move to put them here.")
+                books.isEmpty() && query.isBlank() && state.languageFilter != null ->
+                    NoBooksInLanguage(state.languageFilter!!, "No book in this folder is in this language.") { vm.setLanguageFilter(null) }
                 books.isEmpty() -> EmptyState(Icons.Filled.SearchOff, "No Results", "No books match “$query”.")
                 else -> BooksCollection(books, vm, state, onOpenBook, Modifier.fillMaxSize())
             }

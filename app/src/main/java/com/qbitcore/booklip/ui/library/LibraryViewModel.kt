@@ -27,10 +27,18 @@ data class LibraryUiState(
     val folders: List<BookFolder> = emptyList(),
     val sortOption: SortOption = SortOption.DATE_ADDED,
     val viewMode: ViewMode = ViewMode.MEDIUM_GRID,
+    /** Library-wide language filter (a `Book.language` code); null = all. */
+    val languageFilter: String? = null,
     val isLoaded: Boolean = false,
 ) {
     fun booksIn(folderId: String?): List<Book> = books.filter { it.folderId == folderId }
     val unfiled: List<Book> get() = booksIn(null)
+
+    /** Detected languages in the library with their book counts, most common first. */
+    val languageCounts: List<Pair<String, Int>> by lazy {
+        books.mapNotNull { it.language }.groupingBy { it }.eachCount().toList()
+            .sortedWith(compareByDescending<Pair<String, Int>> { it.second }.thenBy { it.first })
+    }
 }
 
 class LibraryViewModel(private val app: BooklipApplication) : ViewModel() {
@@ -41,7 +49,7 @@ class LibraryViewModel(private val app: BooklipApplication) : ViewModel() {
         repository.folders,
         app.settingsRepository.libraryPrefs,
     ) { books, folders, prefs: LibraryPrefs ->
-        LibraryUiState(sortBooks(books, prefs.sortOption), folders, prefs.sortOption, prefs.viewMode, isLoaded = true)
+        LibraryUiState(sortBooks(books, prefs.sortOption), folders, prefs.sortOption, prefs.viewMode, prefs.languageFilter, isLoaded = true)
     }.stateIn(viewModelScope, SharingStarted.Eagerly, LibraryUiState())
 
     /** Number of imports still running. */
@@ -75,20 +83,33 @@ class LibraryViewModel(private val app: BooklipApplication) : ViewModel() {
         viewModelScope.launch { app.settingsRepository.setViewMode(mode) }
     }
 
-    // MARK: - Search
-
-    /** Title/author match; an empty query keeps everything. */
-    fun filter(list: List<Book>, search: String): List<Book> {
-        val q = search.trim()
-        if (q.isEmpty()) return list
-        return list.filter { it.title.contains(q, ignoreCase = true) || it.author.contains(q, ignoreCase = true) }
+    fun setLanguageFilter(code: String?) {
+        viewModelScope.launch { app.settingsRepository.setLanguageFilter(code) }
     }
 
-    /** Folders to show for a query: name matches, or the folder holds a matching book. */
+    // MARK: - Search
+
+    /** Title/author match within the language filter; an empty query keeps everything in that language. */
+    fun filter(list: List<Book>, search: String): List<Book> {
+        val language = uiState.value.languageFilter
+        val inLanguage = if (language == null) list else list.filter { it.language == language }
+        val q = search.trim()
+        if (q.isEmpty()) return inLanguage
+        return inLanguage.filter { it.title.contains(q, ignoreCase = true) || it.author.contains(q, ignoreCase = true) }
+    }
+
+    /**
+     * Folders to show for a query: name matches, or the folder holds a
+     * matching book. Under a language filter, only folders holding a book in
+     * that language.
+     */
     fun filterFolders(state: LibraryUiState, search: String): List<BookFolder> {
         val q = search.trim()
-        if (q.isEmpty()) return state.folders
-        return state.folders.filter { f -> f.name.contains(q, ignoreCase = true) || filter(state.booksIn(f.id), q).isNotEmpty() }
+        if (q.isEmpty() && state.languageFilter == null) return state.folders
+        return state.folders.filter { f ->
+            filter(state.booksIn(f.id), q).isNotEmpty() ||
+                (q.isNotEmpty() && state.languageFilter == null && f.name.contains(q, ignoreCase = true))
+        }
     }
 
     // MARK: - Selection
@@ -100,6 +121,11 @@ class LibraryViewModel(private val app: BooklipApplication) : ViewModel() {
 
     fun toggleSelection(id: String) {
         selectedIds = if (id in selectedIds) selectedIds - id else selectedIds + id
+    }
+
+    /** Replaces the selection (drag selection sweeps a whole range at once). */
+    fun setSelection(ids: Set<String>) {
+        selectedIds = ids
     }
 
     fun allSelected(visible: List<Book>): Boolean = visible.isNotEmpty() && visible.all { it.id in selectedIds }

@@ -108,6 +108,7 @@ fun LibraryScreen(
                         TextButton(onClick = { vm.selecting(false) }) { Text("Done") }
                     } else {
                         ViewOptionsMenu(state, vm::setViewMode, vm::setSortOption)
+                        LanguageMenu(state, vm::setLanguageFilter)
                         IconButton(onClick = onOpenStats) { Icon(Icons.Filled.BarChart, contentDescription = "Reading stats") }
                         IconButton(onClick = { vm.selecting(true) }, enabled = state.books.isNotEmpty()) {
                             Icon(Icons.Outlined.CheckCircle, contentDescription = "Select")
@@ -162,6 +163,8 @@ fun LibraryScreen(
                         state.books.isEmpty() -> EmptyState(
                             Icons.AutoMirrored.Filled.MenuBook, "No Books Yet", "Tap + to import .txt, .epub, .pdf, or .md files.",
                         ) { Button(onClick = browseFiles, modifier = Modifier.padding(top = 8.dp)) { Text("Import Book") } }
+                        matchingBooks.isEmpty() && !isSearching && state.languageFilter != null ->
+                            NoBooksInLanguage(state.languageFilter!!, "No book in your library is in this language.") { vm.setLanguageFilter(null) }
                         matchingBooks.isEmpty() -> EmptyState(Icons.Filled.SearchOff, "No Results", "No books match “$query”.")
                         else -> BooksCollection(matchingBooks, vm, state, onOpenBook, Modifier.fillMaxSize())
                     }
@@ -176,6 +179,8 @@ fun LibraryScreen(
                             !state.isLoaded -> Box(Modifier.fillMaxSize())
                             isSearching && entries.isEmpty() && matchingBooks.isEmpty() ->
                                 EmptyState(Icons.Filled.SearchOff, "No Results", "Nothing matches “$query”.")
+                            entries.isEmpty() && state.languageFilter != null ->
+                                NoBooksInLanguage(state.languageFilter!!, "No book in your library is in this language.") { vm.setLanguageFilter(null) }
                             entries.isEmpty() -> EmptyState(Icons.Filled.Folder, "No Folders", "Tap the folder+ button to create one.")
                             else -> BooksCollection(
                                 books = if (isSearching) matchingBooks else emptyList(),

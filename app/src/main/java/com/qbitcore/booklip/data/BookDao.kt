@@ -39,6 +39,12 @@ interface BookDao {
     @Query("UPDATE books SET coverFileName = :cover WHERE id = :id")
     suspend fun setCover(id: String, cover: String?)
 
+    @Query("UPDATE books SET language = :language WHERE id = :id")
+    suspend fun setLanguage(id: String, language: String)
+
+    @Query("SELECT * FROM books WHERE language IS NULL")
+    suspend fun withoutLanguage(): List<Book>
+
     @Delete
     suspend fun delete(book: Book)
 }

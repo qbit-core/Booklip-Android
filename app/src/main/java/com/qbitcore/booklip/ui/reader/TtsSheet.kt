@@ -85,12 +85,16 @@ fun TtsSheet(
                 var expanded by remember { mutableStateOf(false) }
                 Box {
                     OutlinedButton(onClick = { expanded = true }) {
-                        Text(state.voices.firstOrNull { it.name == state.selectedVoiceName }?.label ?: "Automatic")
+                        Text(
+                            state.voices.firstOrNull { it.name == state.selectedVoiceName }?.label
+                                ?: state.automaticVoice?.let { "Automatic · ${it.label}" }
+                                ?: "Automatic"
+                        )
                         Icon(Icons.Filled.ArrowDropDown, contentDescription = null)
                     }
                     DropdownMenu(expanded = expanded, onDismissRequest = { expanded = false }) {
                         DropdownMenuItem(
-                            text = { Text("Automatic (by language)") },
+                            text = { Text(state.automaticVoice?.let { "Automatic · ${it.label}" } ?: "Automatic (by language)") },
                             trailingIcon = { if (state.selectedVoiceName == null) Icon(Icons.Filled.Check, contentDescription = null) },
                             onClick = {
                                 onVoiceSelected(null)

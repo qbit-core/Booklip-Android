@@ -16,6 +16,8 @@ import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.grid.GridCells
 import androidx.compose.foundation.lazy.grid.LazyVerticalGrid
 import androidx.compose.foundation.lazy.grid.items
+import androidx.compose.foundation.lazy.grid.rememberLazyGridState
+import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
@@ -28,6 +30,7 @@ import androidx.compose.material.icons.filled.Cancel
 import androidx.compose.material.icons.filled.Check
 import androidx.compose.material.icons.filled.CheckCircle
 import androidx.compose.material.icons.filled.GridView
+import androidx.compose.material.icons.filled.Language
 import androidx.compose.material.icons.filled.RadioButtonUnchecked
 import androidx.compose.material.icons.filled.Search
 import androidx.compose.material.icons.outlined.Delete
@@ -36,6 +39,7 @@ import androidx.compose.material3.DropdownMenu
 import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
+import androidx.compose.material3.LocalContentColor
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedTextField
@@ -66,6 +70,11 @@ import com.qbitcore.booklip.model.Book
 import com.qbitcore.booklip.model.BookFolder
 import com.qbitcore.booklip.model.SortOption
 import com.qbitcore.booklip.model.ViewMode
+import com.qbitcore.booklip.parser.LanguageDetector
+import com.qbitcore.booklip.ui.dragSelectItem
+import com.qbitcore.booklip.ui.dragSelection
+import com.qbitcore.booklip.ui.rememberDragSelectState
+import com.qbitcore.booklip.ui.reader.EmptyState
 
 @Composable
 fun SearchField(query: String, onQueryChange: (String) -> Unit, placeholder: String, modifier: Modifier = Modifier) {
@@ -120,6 +129,47 @@ fun ViewOptionsMenu(state: LibraryUiState, onViewMode: (ViewMode) -> Unit, onSor
     }
 }
 
+/**
+ * Filters the library by detected book language. Hidden until the library
+ * holds at least one book with a known language.
+ */
+@Composable
+fun LanguageMenu(state: LibraryUiState, onSelect: (String?) -> Unit) {
+    val counts = state.languageCounts
+    if (counts.isEmpty() && state.languageFilter == null) return
+    var expanded by remember { mutableStateOf(false) }
+    Box {
+        IconButton(onClick = { expanded = true }) {
+            Icon(
+                Icons.Filled.Language,
+                contentDescription = "Filter by language",
+                tint = if (state.languageFilter != null) MaterialTheme.colorScheme.primary else LocalContentColor.current,
+            )
+        }
+        DropdownMenu(expanded = expanded, onDismissRequest = { expanded = false }) {
+            CheckedMenuItem("All Languages", state.languageFilter == null) {
+                onSelect(null)
+                expanded = false
+            }
+            HorizontalDivider()
+            counts.forEach { (code, count) ->
+                CheckedMenuItem("${LanguageDetector.displayName(code)} ($count)", code == state.languageFilter) {
+                    onSelect(code)
+                    expanded = false
+                }
+            }
+        }
+    }
+}
+
+/** Empty state while the language filter hides every book, with the way out. */
+@Composable
+fun NoBooksInLanguage(code: String, message: String, onShowAll: () -> Unit) {
+    EmptyState(Icons.Filled.Language, "No ${LanguageDetector.displayName(code)} Books", message) {
+        TextButton(onClick = onShowAll) { Text("Show All Languages") }
+    }
+}
+
 @Composable
 private fun MenuHeader(text: String) {
     Text(
@@ -154,40 +204,70 @@ fun BooksCollection(
     onDeleteFolder: (BookFolder) -> Unit = {},
 ) {
     val minWidth = state.viewMode.minCellWidthDp
+    val dragState = rememberDragSelectState<String>()
+    val ids = remember(books) { books.map { it.id } }
+    val gridState = rememberLazyGridState()
+    val listState = rememberLazyListState()
+    val sweep = Modifier.dragSelection(
+        enabled = vm.isSelecting,
+        state = dragState,
+        keys = ids,
+        selected = vm.selectedIds,
+        onSelectionChange = vm::setSelection,
+        scrollState = if (minWidth != null) gridState else listState,
+    )
     if (minWidth != null) {
         LazyVerticalGrid(
             columns = GridCells.Adaptive(minWidth.dp),
+            state = gridState,
             contentPadding = PaddingValues(16.dp),
             horizontalArrangement = Arrangement.spacedBy(16.dp),
             verticalArrangement = Arrangement.spacedBy(16.dp),
-            modifier = modifier,
+            modifier = modifier.then(sweep),
         ) {
             items(leading, key = { "folder:" + it.key }) { entry ->
                 FolderItem(entry, asRow = false, onOpenFolder, onRenameFolder, onDeleteFolder)
             }
-            items(books, key = { it.id }) { book -> BookItem(book, asRow = false, vm, state, onOpenBook) }
+            items(books, key = { it.id }) { book ->
+                BookItem(book, asRow = false, vm, state, onOpenBook, Modifier.dragSelectItem(dragState, book.id))
+            }
         }
     } else {
-        LazyColumn(contentPadding = PaddingValues(16.dp), verticalArrangement = Arrangement.spacedBy(8.dp), modifier = modifier) {
+        LazyColumn(
+            state = listState,
+            contentPadding = PaddingValues(16.dp),
+            verticalArrangement = Arrangement.spacedBy(8.dp),
+            modifier = modifier.then(sweep),
+        ) {
             items(leading, key = { "folder:" + it.key }) { entry ->
                 FolderItem(entry, asRow = true, onOpenFolder, onRenameFolder, onDeleteFolder)
             }
-            items(books, key = { it.id }) { book -> BookItem(book, asRow = true, vm, state, onOpenBook) }
+            items(books, key = { it.id }) { book ->
+                BookItem(book, asRow = true, vm, state, onOpenBook, Modifier.dragSelectItem(dragState, book.id))
+            }
         }
     }
 }
 
 @OptIn(ExperimentalFoundationApi::class)
 @Composable
-private fun BookItem(book: Book, asRow: Boolean, vm: LibraryViewModel, state: LibraryUiState, onOpenBook: (Book) -> Unit) {
+private fun BookItem(
+    book: Book,
+    asRow: Boolean,
+    vm: LibraryViewModel,
+    state: LibraryUiState,
+    onOpenBook: (Book) -> Unit,
+    modifier: Modifier = Modifier,
+) {
     var menuOpen by remember { mutableStateOf(false) }
     var moving by remember { mutableStateOf(false) }
     var confirmDelete by remember { mutableStateOf(false) }
     val selected = book.id in vm.selectedIds
-    Box {
+    Box(modifier) {
+        // In select mode a long press starts a drag selection instead (see dragSelection).
         val click = Modifier.clip(RoundedCornerShape(12.dp)).combinedClickable(
             onClick = { if (vm.isSelecting) vm.toggleSelection(book.id) else onOpenBook(book) },
-            onLongClick = { if (!vm.isSelecting) menuOpen = true },
+            onLongClick = if (vm.isSelecting) null else ({ menuOpen = true }),
         )
         if (asRow) BookRow(book, click) else BookCard(book, click)
         if (vm.isSelecting) {

@@ -65,6 +65,11 @@ data class Book(
     val coverFileName: String? = null,
     val progressUpdated: Long? = null,
     val charIndex: Int = 0,
+    /**
+     * BCP-47 code from `LanguageDetector` ("ko", "en", "zh-Hant"…); null = not
+     * detected yet (imported before detection existed), "und" = no text.
+     */
+    val language: String? = null,
 ) {
     companion object {
         const val UNKNOWN_POSITION = -1

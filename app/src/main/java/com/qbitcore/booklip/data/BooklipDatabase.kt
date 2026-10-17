@@ -12,7 +12,7 @@ import com.qbitcore.booklip.model.Highlight
 
 @Database(
     entities = [Book::class, BookFolder::class, Bookmark::class, Highlight::class],
-    version = 3,
+    version = 4,
     exportSchema = false,
 )
 @TypeConverters(Converters::class)
@@ -39,6 +39,13 @@ abstract class BooklipDatabase : RoomDatabase() {
                         "length INTEGER NOT NULL, color TEXT NOT NULL, snippet TEXT NOT NULL, " +
                         "progress REAL NOT NULL, date INTEGER NOT NULL, PRIMARY KEY(id))"
                 )
+            }
+        }
+
+        /** v4 adds the detected book language (null until detected). */
+        val MIGRATION_3_4 = object : Migration(3, 4) {
+            override fun migrate(db: SupportSQLiteDatabase) {
+                db.execSQL("ALTER TABLE books ADD COLUMN language TEXT")
             }
         }
     }

@@ -35,21 +35,25 @@ the emulator rather than by reading the code.
 
 Formats **.txt .epub .pdf .md**. Library: All Books / Folders tabs, folder
 detail screens (plus "Unfiled"), search (also on the Folders tab and inside
-folders), sort + grid/list view modes (persisted), multi-select with
-All/None · Move · Delete, long-press menu (move / delete), real covers.
+folders), sort + grid/list view modes (persisted), **language filter** (globe menu,
+persisted), multi-select with All/None · Move · Delete and **drag-to-select**
+(also in the cloud browser), long-press menu (move / delete), real covers.
 Reader: font / size / line spacing / 6 colour themes, **Vertical Slide**
 (continuous scroll) or **Paper Book** (pages) with edge-tap and swipe paging,
 auto-scroll, nested table of contents (NCX / nav, anchor-accurate), bookmarks
 (toggle, ticks on the progress bar), highlights (4 colours, character
 ranges), in-book search with match stepping, Define, exact position restore,
-"Page X / Y". **TTS**: Korean / English voices (or automatic by language),
+"Page X / Y". **Language detection** per book (`LanguageDetector`, same codes as iOS).
+**TTS**: English / Korean / Japanese / Chinese voices plus the book's language
+("Automatic" = best voice for the book's language; a pick is remembered per
+language),
 speed, pitch, sentence highlight + follow, sleep timer, background playback
 with media notification / lock-screen controls. **Reading stats**. **Cloud
 import**: Dropbox, OneDrive, Google Drive with Select mode (files and whole
 folders → library folder).
 
-Not ported, on purpose: drag-to-sweep selection, iCloud sync (off on iOS
-too), URL import (not reachable in the iOS UI either).
+Not ported, on purpose: iCloud sync (off on iOS too), URL import (not
+reachable in the iOS UI either).
 
 ## Architecture (`app/src/main/java/com/qbitcore/booklip/`)
 
@@ -65,8 +69,10 @@ too), URL import (not reachable in the iOS UI either).
   rendering to text + `StyleRun`s happens on load), `EpubParser` (port of the
   iOS parser: OPF via pull parser, NCX/nav TOC with fragment splitting,
   inline images, embedded fonts incl. IDPF/Adobe de-obfuscation, cover),
-  `PdfParser` (page-0 cover only).
-- **data/** — DAOs, `BooklipDatabase` (**version 3**, `MIGRATION_2_3`),
+  `PdfParser` (page-0 cover; `sampleText` for language detection on Android
+  15+), `LanguageDetector` (see below).
+- **data/** — DAOs, `BooklipDatabase` (**version 4**, `MIGRATION_2_3`,
+  `MIGRATION_3_4` adds `books.language`),
   `FileStore` (book files, covers, and the per-book parsed cache
   `files/parsed-v3/<fileName>/`: `text.txt`, `chapters.json`, `img_N`,
   `font_N`, `meta.json` written last as the "complete" marker),
@@ -82,6 +88,9 @@ too), URL import (not reachable in the iOS UI either).
 - **tts/** — `TtsController` (app-wide player over
   `android.speech.tts.TextToSpeech`), `TtsPlaybackService` (foreground
   service + `MediaSessionCompat`).
+- **ui/** — `DragSelection` (`Modifier.dragSelection` on the lazy container +
+  `Modifier.dragSelectItem` per cell), shared by the library and the cloud
+  browser.
 - **ui/library/** — `LibraryViewModel`, `LibraryScreen`, `FolderViews`
   (`FolderDetailScreen`, folder cards), `LibraryComponents` (collection,
   selection bar, dialogs, view/sort menu), `BookCard`, `StatsScreen`.
@@ -157,12 +166,27 @@ An EPUB image is one `U+FFFC` + `"\n\n"` in the text, as on iOS.
   callbacks from a flushed queue are ignored. The manifest `<queries>` entry
   for `TTS_SERVICE` is required on Android 11+ or no engine can be bound.
   Speech stops when the reader closes, never just because the app went to the
-  background.
+  background. The readers call `setBookLanguage(book.language)` on open; the
+  per-language pick lives in DataStore `ttsVoice.<code>`, the old global
+  `ttsVoice` only applies to books of unknown language.
 - **PDF.** Pages are rendered with `PdfRenderer` (one open page at a time,
   all access under `rendererMutex`; bitmaps are dropped, never recycled,
   because a frame may still be drawing them). The text layer
   (`Page.getTextContents` / `searchText`) exists only on **Android 15+**, so
   PDF speech and search are offered only there.
+- **Language detection.** `LanguageDetector` decides CJK by Unicode script
+  counts exactly as iOS (Hangul → ko, kana → ja, Han → zh-Hans / zh-Hant by
+  characters unique to one script). Android has no `NLLanguageRecognizer`, so
+  other scripts map to their main language and Latin text is scored against
+  common-word lists (unknown → "und"). `Book.language` is set on import;
+  `BookRepository.detectMissingLanguages` (launched from `BooklipApplication`)
+  tags older books once. PDFs before Android 15 have no text and stay `null`.
+- **Drag selection.** Mirrors iOS `DragSelection.swift`, Photos-style: a drag
+  that starts horizontally, or a long press (any direction), sweeps; the first
+  cell decides select vs deselect and the whole index range anchor…finger gets
+  it, with edge autoscroll. It reads pointers in the `Initial` pass and
+  consumes them once engaged, so the list doesn't scroll and taps don't fire;
+  in select mode `BookItem` has no `onLongClick`, so the long press is free.
 - **`Book.charIndex`** is a character offset for text formats, a page index
   for PDF, and `Book.UNKNOWN_POSITION` (-1) when unknown → fall back to
   `progress`.

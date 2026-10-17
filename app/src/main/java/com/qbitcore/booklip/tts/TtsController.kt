@@ -14,6 +14,7 @@ import android.speech.tts.TextToSpeech
 import android.speech.tts.UtteranceProgressListener
 import android.speech.tts.Voice
 import androidx.core.content.ContextCompat
+import com.qbitcore.booklip.parser.LanguageDetector
 import com.qbitcore.booklip.parser.ParsedBook
 import com.qbitcore.booklip.settings.SettingsRepository
 import com.qbitcore.booklip.settings.TtsPrefs
@@ -47,8 +48,13 @@ data class TtsState(
     val rate: Float = 1f,
     val pitch: Float = 1f,
     val voices: List<TtsVoice> = emptyList(),
-    /** null = automatic: Korean voice for Korean text, English otherwise. */
+    /**
+     * null = automatic: the best voice in the book's language, or — language
+     * unknown — Korean for Korean text and English otherwise.
+     */
     val selectedVoiceName: String? = null,
+    /** The voice "Automatic" uses for the open book, when it is one voice. */
+    val automaticVoice: TtsVoice? = null,
     val sleepMinutes: Int? = null,
     /** The sentence being spoken, in the book's text. null when stopped. */
     val spokenRange: CharRange? = null,
@@ -83,6 +89,15 @@ class TtsController(context: Context, private val settings: SettingsRepository) 
 
     private var engine: TextToSpeech? = null
     private var engineVoices: List<Voice> = emptyList()
+    /** What "Automatic" speaks the open book with; null = by the text's script. */
+    private var automaticEngineVoice: Voice? = null
+
+    /** The open book's language (`LanguageDetector` code), null when unknown. */
+    private var bookLanguage: String? = null
+    /** Voice picked for books of unknown language (the pre-detection preference). */
+    private var globalVoice: String? = null
+    /** Voice picked per book language, so one pick covers every book in it. */
+    private var languageVoices: Map<String, String> = emptyMap()
     private var sleepJob: Job? = null
 
     private var text: String = ""
@@ -115,7 +130,10 @@ class TtsController(context: Context, private val settings: SettingsRepository) 
         if (engine != null) return
         scope.launch {
             val prefs = settings.ttsPrefs.first()
-            _state.update { it.copy(rate = prefs.rate, pitch = prefs.pitch, selectedVoiceName = prefs.voiceName) }
+            globalVoice = prefs.voiceName
+            languageVoices = settings.ttsLanguageVoices.first()
+            _state.update { it.copy(rate = prefs.rate, pitch = prefs.pitch) }
+            refreshVoices()
         }
         engine = TextToSpeech(appContext) { status ->
             main.post {
@@ -132,23 +150,81 @@ class TtsController(context: Context, private val settings: SettingsRepository) 
         }
     }
 
+    /**
+     * The open book's language: the picker lists its voices first, "Automatic"
+     * speaks with the best of them, and the voice last picked for that
+     * language is selected again.
+     */
+    fun setBookLanguage(code: String?) {
+        bookLanguage = code?.takeIf { it != LanguageDetector.UNDETERMINED }
+        refreshVoices()
+    }
+
     private fun refreshVoices() {
         val all = runCatching { engine?.voices }.getOrNull().orEmpty()
-        // English and Korean, like the iOS app; offline voices only.
+        // The languages Booklip always offers plus the book's own; offline voices only.
         engineVoices = all.filter { voice ->
             val tag = voice.locale.toLanguageTag().lowercase()
-            (tag.startsWith("en-us") || tag.startsWith("ko")) && !voice.isNetworkConnectionRequired &&
+            (PICKER_LANGUAGES.any { tag.startsWith(it) } || matchesBookLanguage(voice)) && !voice.isNetworkConnectionRequired &&
                 voice.features?.contains(TextToSpeech.Engine.KEY_FEATURE_NOT_INSTALLED) != true
         }.sortedWith(compareBy({ it.locale.toLanguageTag() }, { it.name }))
         // The engine's own entry for "the language's default voice" repeats one
         // of the others; list it only when it is all there is.
         val hasNamed = engineVoices.groupBy { it.locale.language }.mapValues { (_, list) -> list.any { !isLanguageDefault(it) } }
         engineVoices = engineVoices.filter { !(isLanguageDefault(it) && hasNamed[it.locale.language] == true) }
+        // Named in this fixed order, so a voice keeps its name whichever book is open.
         val used = HashSet<String>()
-        val voices = engineVoices.map { voice -> TtsVoice(voice.name, "${personName(voice, used)}  (${voice.locale.toLanguageTag()})") }
+        val labels = engineVoices.associate { voice -> voice.name to "${personName(voice, used)}  (${voice.locale.toLanguageTag()})" }
+        engineVoices = engineVoices.sortedBy { if (matchesBookLanguage(it)) 0 else 1 }
+        val voices = engineVoices.map { TtsVoice(it.name, labels.getValue(it.name)) }
+        automaticEngineVoice = bestVoiceForBook()
+        val remembered = bookLanguage?.let { languageVoices[it] } ?: globalVoice.takeIf { bookLanguage == null }
         _state.update { s ->
-            s.copy(voices = voices, selectedVoiceName = s.selectedVoiceName?.takeIf { name -> voices.any { it.name == name } })
+            s.copy(
+                voices = voices,
+                selectedVoiceName = remembered?.takeIf { name -> voices.any { it.name == name } },
+                automaticVoice = automaticEngineVoice?.let { auto -> voices.firstOrNull { it.name == auto.name } },
+            )
         }
+    }
+
+    /**
+     * The best installed voice in the book's language: the language's main
+     * region first, then the engine's quality rating. null when the language
+     * is unknown or no installed voice speaks it.
+     */
+    private fun bestVoiceForBook(): Voice? {
+        val code = bookLanguage ?: return null
+        val regions = PREFERRED_REGIONS[code].orEmpty()
+        return engineVoices.filter(::matchesBookLanguage).minWithOrNull(
+            compareBy<Voice>(
+                { regions.indexOf(it.locale.country).let { i -> if (i < 0) regions.size else i } },
+                { -it.quality },
+                { it.latency },
+            )
+        )
+    }
+
+    /**
+     * Does [voice] speak the open book's language? Chinese also matches the
+     * script: Traditional → Taiwan / Hong Kong voices, Simplified → the rest.
+     */
+    private fun matchesBookLanguage(voice: Voice): Boolean {
+        val code = bookLanguage ?: return false
+        val base = LanguageDetector.baseCode(code)
+        if (voiceLanguage(voice) != base) return false
+        if (base == "zh") {
+            val traditional = voice.locale.country in setOf("TW", "HK") || voice.locale.language == "yue"
+            return if (code == "zh-Hant") traditional else !traditional
+        }
+        return true
+    }
+
+    /** The voice's language, with Mandarin / Cantonese engine codes folded into "zh". */
+    private fun voiceLanguage(voice: Voice): String = when (val language = voice.locale.language) {
+        "cmn", "yue" -> "zh"
+        "nb", "nn" -> "no"
+        else -> language
     }
 
     private fun isLanguageDefault(voice: Voice): Boolean = voice.name.endsWith("-language", ignoreCase = true)
@@ -161,12 +237,13 @@ class TtsController(context: Context, private val settings: SettingsRepository) 
      * voice keeps the same name as long as the engine's voice list does.
      */
     private fun personName(voice: Voice, used: MutableSet<String>): String {
-        val korean = voice.locale.language == "ko"
+        val language = voiceLanguage(voice)
         val code = Regex("-x-([a-z0-9]+)-").find(voice.name.lowercase())?.groupValues?.get(1)
-        val known = (if (korean) KOREAN_VOICE_NAMES else ENGLISH_VOICE_NAMES)[code]
+        val known = KNOWN_VOICE_NAMES[language]?.get(code)
+        val pool = NAME_POOLS[language] ?: emptyList()
         val name = known?.takeIf { it !in used }
-            ?: (if (korean) KOREAN_NAME_POOL else ENGLISH_NAME_POOL).firstOrNull { it !in used }
-            ?: "Voice ${used.size + 1}"
+            ?: pool.firstOrNull { it !in used }
+            ?: generateSequence(1) { it + 1 }.map { "${voice.locale.getDisplayLanguage(Locale.ENGLISH)} $it" }.first { it !in used }
         used += name
         return name
     }
@@ -187,6 +264,8 @@ class TtsController(context: Context, private val settings: SettingsRepository) 
 
     fun speak(text: String, from: Int) {
         prepare()
+        // Book opened before its language was detected: decide now.
+        if (bookLanguage == null) LanguageDetector.detect(text).takeIf { it != LanguageDetector.UNDETERMINED }?.let(::setBookLanguage)
         this.text = text
         start(from.coerceIn(0, text.length))
     }
@@ -249,12 +328,28 @@ class TtsController(context: Context, private val settings: SettingsRepository) 
 
     fun setRate(rate: Float) = applyVoiceChange { it.copy(rate = rate) }
     fun setPitch(pitch: Float) = applyVoiceChange { it.copy(pitch = pitch) }
-    fun setVoice(name: String?) = applyVoiceChange { it.copy(selectedVoiceName = name) }
+
+    /**
+     * A voice the user picked. It is remembered for the book's language when
+     * it speaks that language (or is "Automatic"); a voice in another language
+     * is used for this book only. Books of unknown language share one choice.
+     */
+    fun setVoice(name: String?) {
+        val language = bookLanguage
+        when {
+            language == null -> globalVoice = name
+            name == null || engineVoices.firstOrNull { it.name == name }?.let(::matchesBookLanguage) == true -> {
+                languageVoices = if (name == null) languageVoices - language else languageVoices + (language to name)
+                scope.launch { settings.setTtsVoiceFor(language, name) }
+            }
+        }
+        applyVoiceChange { it.copy(selectedVoiceName = name) }
+    }
 
     private fun applyVoiceChange(change: (TtsState) -> TtsState) {
         _state.update(change)
         val s = _state.value
-        scope.launch { settings.setTtsPrefs(TtsPrefs(s.selectedVoiceName, s.rate, s.pitch)) }
+        scope.launch { settings.setTtsPrefs(TtsPrefs(globalVoice, s.rate, s.pitch)) }
         // Already-queued utterances carry the old parameters: requeue from the
         // sentence being spoken so the change is heard right away.
         if (s.isPlaying) start(resumeOffset)
@@ -374,7 +469,7 @@ class TtsController(context: Context, private val settings: SettingsRepository) 
         val s = _state.value
         tts.setSpeechRate(s.rate)
         tts.setPitch(s.pitch)
-        val voice = s.selectedVoiceName?.let { name -> engineVoices.firstOrNull { it.name == name } }
+        val voice = s.selectedVoiceName?.let { name -> engineVoices.firstOrNull { it.name == name } } ?: automaticEngineVoice
         runCatching {
             if (voice != null) tts.voice = voice
             else if (tts.isLanguageAvailable(locale) >= TextToSpeech.LANG_AVAILABLE) tts.language = locale
@@ -435,14 +530,29 @@ class TtsController(context: Context, private val settings: SettingsRepository) 
         private const val MAX_SENTENCE_LENGTH = 2000
         private const val QUEUE_DEPTH = 3
 
-        // Google text-to-speech voice ids → display names.
-        private val KOREAN_VOICE_NAMES = mapOf("ism" to "Yuna", "kob" to "Sora", "koc" to "Minsu", "kod" to "Jun")
-        private val ENGLISH_VOICE_NAMES = mapOf(
-            "sfg" to "Samantha", "iob" to "Flo", "iog" to "Ava", "tpc" to "Nicky", "tpf" to "Allison",
-            "iol" to "Eddy", "iom" to "Reed", "tpd" to "Aaron",
+        /** Language-tag prefixes always offered in the voice picker, as on iOS. */
+        private val PICKER_LANGUAGES = listOf("en-us", "ko", "ja", "zh-cn", "zh-tw", "cmn-cn", "cmn-tw")
+
+        /** Main regions per book language, best first, for "Automatic". */
+        private val PREFERRED_REGIONS = mapOf(
+            "en" to listOf("US", "GB"), "ko" to listOf("KR"), "ja" to listOf("JP"),
+            "zh-Hans" to listOf("CN"), "zh-Hant" to listOf("TW", "HK"),
         )
-        private val KOREAN_NAME_POOL = listOf("Yuna", "Sora", "Minsu", "Jun", "Jihu", "Suho")
-        private val ENGLISH_NAME_POOL = listOf("Samantha", "Flo", "Ava", "Eddy", "Reed", "Nicky", "Aaron", "Allison", "Tom", "Zoe")
+
+        // Google text-to-speech voice ids → display names.
+        private val KNOWN_VOICE_NAMES = mapOf(
+            "ko" to mapOf("ism" to "Yuna", "kob" to "Sora", "koc" to "Minsu", "kod" to "Jun"),
+            "en" to mapOf(
+                "sfg" to "Samantha", "iob" to "Flo", "iog" to "Ava", "tpc" to "Nicky", "tpf" to "Allison",
+                "iol" to "Eddy", "iom" to "Reed", "tpd" to "Aaron",
+            ),
+        )
+        private val NAME_POOLS = mapOf(
+            "ko" to listOf("Yuna", "Sora", "Minsu", "Jun", "Jihu", "Suho"),
+            "en" to listOf("Samantha", "Flo", "Ava", "Eddy", "Reed", "Nicky", "Aaron", "Allison", "Tom", "Zoe"),
+            "ja" to listOf("Kyoko", "Otoya", "Hattori", "Sakura", "Haruka", "Ren"),
+            "zh" to listOf("Tingting", "Lili", "Meijia", "Sinji", "Yu-shu", "Li-mu", "Shasha", "Han"),
+        )
 
         private val AUDIO_ATTRIBUTES: AudioAttributes = AudioAttributes.Builder()
             .setUsage(AudioAttributes.USAGE_MEDIA)

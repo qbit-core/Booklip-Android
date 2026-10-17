@@ -111,6 +111,7 @@ class ReaderViewModel(private val app: BooklipApplication, private val bookId: S
             book = loaded
             tts.prepare()
             tts.setNowPlaying(loaded.title, loaded.author)
+            tts.setBookLanguage(loaded.language)   // voice in the book's language
             try {
                 val content = repository.loadContent(loaded)
                 val (doc, typeface) = withContext(Dispatchers.IO) {

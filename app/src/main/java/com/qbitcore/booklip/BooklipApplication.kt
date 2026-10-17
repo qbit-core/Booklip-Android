@@ -13,6 +13,7 @@ import com.qbitcore.booklip.tts.TtsController
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
+import kotlinx.coroutines.launch
 
 class BooklipApplication : Application() {
     /** For work that must outlive the screen that started it (saving on close, cloud imports). */
@@ -32,7 +33,7 @@ class BooklipApplication : Application() {
     override fun onCreate() {
         super.onCreate()
         val database = Room.databaseBuilder(this, BooklipDatabase::class.java, "booklip.db")
-            .addMigrations(BooklipDatabase.MIGRATION_2_3)
+            .addMigrations(BooklipDatabase.MIGRATION_2_3, BooklipDatabase.MIGRATION_3_4)
             // Only for schemas older than the first migration (early development builds).
             .fallbackToDestructiveMigration()
             .build()
@@ -41,5 +42,6 @@ class BooklipApplication : Application() {
         statsRepository = ReadingStatsRepository(this)
         cloudRepository = CloudRepository(this, CloudTokenStore(this), repository)
         tts = TtsController(this, settingsRepository)
+        appScope.launch { repository.detectMissingLanguages() }
     }
 }
