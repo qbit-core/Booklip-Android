@@ -31,6 +31,13 @@ AGP 9.4 / Kotlin 2.2 / Gradle 9.6, JDK 21 (JetBrains runtime via the
 foojay toolchain resolver). Always build after changes; verify UI changes on
 the emulator rather than by reading the code.
 
+**Changelog is part of every change.** `README.md` holds the changelog twice —
+under `## English` and `## 한국어` — newest first, as in the iOS repo: the
+latest date is the first heading and the newest item is the first bullet under
+it. Whenever you change the app, add the entry at the TOP of BOTH sections
+(same date heading `#### YYYY-MM-DD`, same items, version bumps in bold)
+without being asked, in the same commit as the change.
+
 ## Features (all implemented, matching the iOS app)
 
 Formats **.txt .epub .pdf .md**. Library: All Books / Folders tabs, folder
